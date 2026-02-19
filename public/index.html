@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MGV Messenger</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<!-- ═══════════════ LOGIN ═══════════════ -->
+<div id="login-screen" style="display:flex;">
+  <div class="login-box">
+    <div class="login-logo">MGV<span>.</span></div>
+    <div class="login-tag">Secure Messenger</div>
+    <div class="login-err" id="login-err"></div>
+    <label class="lbl">Имя пользователя</label>
+    <input class="inp" id="l-name" type="text" placeholder="username" maxlength="30" autocomplete="username">
+    <label class="lbl">Пароль</label>
+    <input class="inp" id="l-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+    <button class="btn" id="login-btn">→ ВОЙТИ / ЗАРЕГИСТРИРОВАТЬСЯ</button>
+  </div>
+</div>
+
+<!-- ═══════════════ APP ═══════════════ -->
+<div id="app">
+
+  <!-- Top Bar -->
+  <div class="topbar">
+    <div class="topbar-logo">MGV<span>.</span></div>
+    <div class="topbar-right">
+      <div class="user-chip">
+        <div class="online-dot" id="conn-dot"></div>
+        <span id="topbar-user">—</span>
+      </div>
+      <a id="admin-link" class="icon-btn" href="/admin.html" target="_blank" title="Админ панель" style="display:none;text-decoration:none;">⚙️</a>
+      <button class="icon-btn" onclick="MGV.doLogout()" title="Выйти">🚪</button>
+    </div>
+  </div>
+
+  <!-- Workspace -->
+  <div class="workspace">
+
+    <!-- ── Sidebar ── -->
+    <div class="sidebar">
+      <div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;">
+
+        <!-- Channels -->
+        <div class="sidebar-section">
+          Каналы
+          <button class="sidebar-add-btn" onclick="MGV.openCreateChannel()" title="Создать канал">+</button>
+        </div>
+        <div id="channel-list" class="sidebar-list"></div>
+
+        <div class="sidebar-divider"></div>
+
+        <!-- Online users -->
+        <div class="sidebar-section">Онлайн</div>
+        <div id="online-list"></div>
+
+      </div>
+    </div>
+
+    <!-- ── Chat Area ── -->
+    <div class="chat-area">
+
+      <!-- No chat selected -->
+      <div class="no-chat" id="no-chat">
+        <div class="no-chat-logo">MGV<span>.</span></div>
+        <div class="no-chat-text">Выберите канал или пользователя</div>
+      </div>
+
+      <!-- Chat view -->
+      <div id="chat-view" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+
+        <!-- Chat header -->
+        <div class="chat-header">
+          <span class="chat-header-icon">#</span>
+          <div>
+            <span class="chat-header-name" id="chat-name">—</span>
+            <span class="chat-header-desc" id="chat-desc"></span>
+          </div>
+          <div class="chat-header-right">
+            <button class="icon-btn" id="call-btn" title="Голосовой звонок">📞</button>
+          </div>
+        </div>
+
+        <!-- Messages -->
+        <div id="messages"></div>
+        <div class="typing-indicator" id="typing-indicator"></div>
+
+        <!-- Input area -->
+        <div class="input-area">
+          <!-- Upload preview -->
+          <div id="upload-preview" style="display:none;" class="upload-preview">
+            <span>📎</span>
+            <span class="up-name" id="upload-preview-name">—</span>
+            <button class="upload-cancel" id="upload-cancel-btn">✕</button>
+          </div>
+
+          <div class="input-row">
+            <div class="input-actions">
+              <button class="input-icon-btn" onclick="MGV.attachFile()" title="Прикрепить файл">📎</button>
+            </div>
+            <textarea id="msg-input" rows="1" placeholder="Сообщение..."></textarea>
+            <div class="input-actions">
+              <button class="send-btn" id="send-btn" title="Отправить">➤</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MODALS ═══════════════ -->
+
+<!-- Create Channel -->
+<div class="modal-overlay" id="create-channel-modal">
+  <div class="modal">
+    <div class="modal-title">Создать канал</div>
+    <div class="form-group">
+      <label class="lbl">Название</label>
+      <input class="inp" id="new-ch-name" type="text" placeholder="мой-канал" maxlength="30">
+    </div>
+    <div class="form-group">
+      <label class="lbl">Описание</label>
+      <input class="inp" id="new-ch-desc" type="text" placeholder="О чём этот канал" maxlength="100">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="MGV.closeCreateChannel()">Отмена</button>
+      <button class="btn btn-sm" onclick="MGV.submitCreateChannel()">Создать</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ CALL OVERLAY ═══════════════ -->
+<div id="call-overlay">
+  <div class="call-avatar" id="call-avatar">?</div>
+  <div class="call-name" id="call-peer-name">—</div>
+  <div class="call-status" id="call-status">ЗВОНИМ...</div>
+  <div class="call-timer" id="call-timer"></div>
+  <div class="call-controls">
+    <button class="call-btn call-btn-mute" id="mute-btn" onclick="MGV.toggleMute()">🎤</button>
+    <button class="call-btn call-btn-end" onclick="MGV.endCall()">📵</button>
+  </div>
+</div>
+
+<!-- Incoming Call -->
+<div id="incoming-call">
+  <div class="inc-label">📞 Входящий звонок</div>
+  <div class="inc-name" id="inc-name">—</div>
+  <div class="inc-btns">
+    <button class="btn btn-danger btn-sm" onclick="MGV.declineCall()">Отклонить</button>
+    <button class="btn btn-green btn-sm" onclick="MGV.answerCall()">Принять</button>
+  </div>
+</div>
+
+<!-- Image Lightbox -->
+<div id="lightbox">
+  <img src="" alt="">
+</div>
+
+<!-- Hidden file input -->
+<input type="file" id="file-input" style="display:none" accept="*/*">
+
+<audio id="remote-audio" autoplay></audio>
+
+<script src="/app.js"></script>
+</body>
+</html>

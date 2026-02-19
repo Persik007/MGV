@@ -1,0 +1,30 @@
+{
+  "admin": {
+    "passwordHash": "4d591de317d191bd5b9fa74eba5769dbc6643b1880fe04e2ea852d508fd67599",
+    "role": "admin",
+    "createdAt": 1771513667723,
+    "avatar": null,
+    "banned": false
+  },
+  "DimaP": {
+    "passwordHash": "134bd6d02e9210110b9e48e172e825b7c017e12282ca9c0ba9271b3244581c67",
+    "role": "user",
+    "createdAt": 1771513705550,
+    "avatar": null,
+    "banned": false
+  },
+  "NikitaJopa": {
+    "passwordHash": "f42b2e4d6ff10cb176dc8d56de0f1fc528e8a4821b4cf8d980dcdd672368c3bd",
+    "role": "user",
+    "createdAt": 1771514008776,
+    "avatar": null,
+    "banned": false
+  },
+  "avanalchik": {
+    "passwordHash": "5046239fa36ec931a9fb89811b2b699082abb2e11aa95f167cbc0b47feb005c2",
+    "role": "user",
+    "createdAt": 1771514169293,
+    "avatar": null,
+    "banned": false
+  }
+}

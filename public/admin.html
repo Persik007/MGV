@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MGV Admin</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+body { overflow: auto; height: auto; min-height: 100vh; }
+.admin-layout { min-height: 100vh; }
+</style>
+</head>
+<body>
+
+<div class="admin-layout">
+
+  <!-- Sidebar -->
+  <div class="admin-sidebar">
+    <div class="admin-logo">MGV<span>.</span><sub>ADMIN</sub></div>
+    <div class="admin-nav-item active" onclick="showPage('dashboard')" id="nav-dashboard">
+      <span>📊</span> Дашборд
+    </div>
+    <div class="admin-nav-item" onclick="showPage('users')" id="nav-users">
+      <span>👥</span> Пользователи
+    </div>
+    <div class="admin-nav-item" onclick="showPage('channels')" id="nav-channels">
+      <span>#</span> Каналы
+    </div>
+    <div class="admin-nav-item" onclick="showPage('uploads')" id="nav-uploads">
+      <span>📎</span> Файлы
+    </div>
+    <div style="margin-top:auto;padding:16px;">
+      <a href="/" style="color:var(--text3);font-size:12px;text-decoration:none;">← Вернуться в чат</a>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="admin-content">
+
+    <!-- Login check -->
+    <div id="admin-login" style="display:none;max-width:360px;margin:60px auto;">
+      <div class="admin-title">Вход в панель</div>
+      <label class="lbl">Имя</label>
+      <input class="inp" id="al-name" type="text" placeholder="admin">
+      <label class="lbl">Пароль</label>
+      <input class="inp" id="al-pass" type="password" placeholder="••••••••">
+      <div id="al-err" style="color:var(--red);font-size:12px;margin-bottom:8px;"></div>
+      <button class="btn" onclick="adminLogin()">Войти</button>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="admin-page active" id="page-dashboard">
+      <div class="admin-title">📊 Дашборд</div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-value" id="stat-users">—</div><div class="stat-label">Пользователей</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-online">—</div><div class="stat-label">Онлайн</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-channels">—</div><div class="stat-label">Каналов</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-files">—</div><div class="stat-label">Файлов</div></div>
+      </div>
+      <div class="admin-subtitle">Последние загрузки</div>
+      <table class="admin-table" id="recent-uploads">
+        <thead><tr><th>Файл</th><th>Автор</th><th>Размер</th><th>Время</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- Users -->
+    <div class="admin-page" id="page-users">
+      <div class="admin-title" style="display:flex;align-items:center;justify-content:space-between;">
+        👥 Пользователи
+      </div>
+      <table class="admin-table" id="users-table">
+        <thead>
+          <tr>
+            <th>Имя</th>
+            <th>Роль</th>
+            <th>Статус</th>
+            <th>Зарегистрирован</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody id="users-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Channels -->
+    <div class="admin-page" id="page-channels">
+      <div class="admin-title" style="display:flex;align-items:center;justify-content:space-between;">
+        # Каналы
+        <button class="btn btn-sm" onclick="showCreateChannel()">+ Создать</button>
+      </div>
+
+      <div id="create-ch-form" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;">
+        <div class="form-group">
+          <label class="lbl">Название</label>
+          <input class="inp" id="ch-name" type="text" placeholder="новый-канал" maxlength="30">
+        </div>
+        <div class="form-group">
+          <label class="lbl">Описание</label>
+          <input class="inp" id="ch-desc" type="text" placeholder="Описание" maxlength="100">
+        </div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-sm" onclick="createChannel()">Создать</button>
+          <button class="btn btn-ghost btn-sm" onclick="hideCreateChannel()">Отмена</button>
+        </div>
+      </div>
+
+      <table class="admin-table" id="channels-table">
+        <thead><tr><th>ID</th><th>Название</th><th>Описание</th><th>Создан</th><th>Действия</th></tr></thead>
+        <tbody id="channels-tbody"></tbody>
+      </table>
+    </div>
+
+    <!-- Uploads -->
+    <div class="admin-page" id="page-uploads">
+      <div class="admin-title">📎 Загруженные файлы</div>
+      <table class="admin-table">
+        <thead><tr><th>Файл</th><th>Оригинал</th><th>Загрузил</th><th>Размер</th><th>Тип</th><th>Время</th></tr></thead>
+        <tbody id="uploads-tbody"></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<script>
+var adminUser = localStorage.getItem('mgv_n');
+var adminPass = localStorage.getItem('mgv_p');
+var ws = null;
+var stats = null;
+
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtSize(b) {
+  if (!b) return '—';
+  if (b < 1024) return b + 'B';
+  if (b < 1048576) return (b/1024).toFixed(1) + 'KB';
+  return (b/1048576).toFixed(1) + 'MB';
+}
+function fmtDate(t) { return t ? new Date(t).toLocaleDateString('ru') + ' ' + new Date(t).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'}) : '—'; }
+
+function adminLogin() {
+  adminUser = $('al-name').value.trim();
+  adminPass = $('al-pass').value;
+  connectAdmin();
+}
+
+function connectAdmin() {
+  if (!adminUser || !adminPass) {
+    $('admin-login').style.display = 'block';
+    return;
+  }
+  var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto + '://' + location.host);
+  ws.onopen = function() {
+    ws.send(JSON.stringify({ type: 'auth', name: adminUser, pass: adminPass }));
+  };
+  ws.onmessage = function(e) {
+    var msg = JSON.parse(e.data);
+    if (msg.type === 'auth-ok') {
+      if (msg.role !== 'admin') {
+        alert('Нет доступа. Нужна роль admin.');
+        location.href = '/';
+        return;
+      }
+      $('admin-login').style.display = 'none';
+      loadStats();
+    } else if (msg.type === 'auth-fail') {
+      $('al-err').textContent = msg.reason;
+      $('admin-login').style.display = 'block';
+    } else if (msg.type === 'admin-stats') {
+      stats = msg;
+      renderStats();
+    } else if (msg.type === 'admin-ok') {
+      loadStats();
+    } else if (msg.type === 'channels') {
+      if (stats) stats.channels = msg.channels;
+      renderChannelsTable(msg.channels);
+    }
+  };
+  ws.onclose = function() { setTimeout(connectAdmin, 3000); };
+}
+
+function loadStats() {
+  ws.send(JSON.stringify({ type: 'admin-stats' }));
+}
+
+function renderStats() {
+  if (!stats) return;
+  $('stat-users').textContent = stats.users ? stats.users.length : 0;
+  $('stat-online').textContent = stats.onlineCount || 0;
+  $('stat-channels').textContent = stats.channels ? stats.channels.length : 0;
+  $('stat-files').textContent = stats.uploads ? stats.uploads.length : 0;
+
+  // Recent uploads
+  var tbody = $('recent-uploads').querySelector('tbody');
+  tbody.innerHTML = '';
+  var uploads = (stats.uploads || []).slice().reverse().slice(0, 10);
+  uploads.forEach(function(u) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td><a href="/uploads/' + esc(u.filename) + '" target="_blank" style="color:var(--accent)">' + esc(u.originalName) + '</a></td>'
+      + '<td>' + esc(u.uploader) + '</td>'
+      + '<td>' + fmtSize(u.size) + '</td>'
+      + '<td>' + fmtDate(u.time) + '</td>';
+    tbody.appendChild(tr);
+  });
+
+  renderUsersTable(stats.users);
+  renderChannelsTable(stats.channels);
+  renderUploadsTable(stats.uploads);
+}
+
+function renderUsersTable(users) {
+  var tbody = $('users-tbody');
+  if (!tbody || !users) return;
+  tbody.innerHTML = '';
+  users.forEach(function(u) {
+    var statusClass = u.banned ? 'banned' : (u.online ? 'online' : 'offline');
+    var statusText = u.banned ? 'Забанен' : (u.online ? 'Онлайн' : 'Офлайн');
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td><strong>' + esc(u.name) + '</strong></td>'
+      + '<td><span class="role-badge ' + u.role + '">' + u.role + '</span></td>'
+      + '<td><span class="status-badge"><span class="status-dot ' + statusClass + '"></span>' + statusText + '</span></td>'
+      + '<td>' + fmtDate(u.createdAt) + '</td>'
+      + '<td><div class="table-actions">'
+      + (u.role === 'admin' ? '' : '<button class="btn btn-sm" onclick="setRole(\'' + esc(u.name) + '\',\'admin\')">→ Admin</button>')
+      + (u.role === 'admin' ? '' : (u.banned
+          ? '<button class="btn btn-green btn-sm" onclick="unbanUser(\'' + esc(u.name) + '\')">Разбанить</button>'
+          : '<button class="btn btn-danger btn-sm" onclick="banUser(\'' + esc(u.name) + '\')">Бан</button>'))
+      + (u.name === adminUser ? '' : '<button class="btn btn-ghost btn-sm" onclick="deleteUser(\'' + esc(u.name) + '\')">Удалить</button>')
+      + '</div></td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function renderChannelsTable(channels) {
+  var tbody = $('channels-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  (channels || []).forEach(function(ch) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td><code>' + esc(ch.id) + '</code></td>'
+      + '<td>#' + esc(ch.name) + '</td>'
+      + '<td>' + esc(ch.description || '—') + '</td>'
+      + '<td>' + fmtDate(ch.createdAt) + '</td>'
+      + '<td>' + (ch.id !== 'general'
+          ? '<button class="btn btn-danger btn-sm" onclick="deleteChannel(\'' + esc(ch.id) + '\')">Удалить</button>'
+          : '—')
+      + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function renderUploadsTable(uploads) {
+  var tbody = $('uploads-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  (uploads || []).slice().reverse().forEach(function(u) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td><a href="/uploads/' + esc(u.filename) + '" target="_blank" style="color:var(--accent);font-size:11px;">' + esc(u.filename) + '</a></td>'
+      + '<td>' + esc(u.originalName) + '</td>'
+      + '<td>' + esc(u.uploader) + '</td>'
+      + '<td>' + fmtSize(u.size) + '</td>'
+      + '<td style="font-size:11px;color:var(--text3)">' + esc(u.mimetype||'—') + '</td>'
+      + '<td>' + fmtDate(u.time) + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+// Admin actions
+function banUser(name) { if(confirm('Забанить '+name+'?')) ws.send(JSON.stringify({type:'ban-user',name:name})); }
+function unbanUser(name) { ws.send(JSON.stringify({type:'unban-user',name:name})); }
+function deleteUser(name) { if(confirm('Удалить пользователя '+name+'? Это нельзя отменить.')) ws.send(JSON.stringify({type:'delete-user',name:name})); }
+function setRole(name, role) { if(confirm('Назначить '+name+' роль '+role+'?')) ws.send(JSON.stringify({type:'set-role',name:name,role:role})); }
+function deleteChannel(id) { if(confirm('Удалить канал #'+id+'? Все сообщения будут удалены.')) ws.send(JSON.stringify({type:'delete-channel',id:id})); }
+
+function showCreateChannel() { $('create-ch-form').style.display = 'block'; }
+function hideCreateChannel() { $('create-ch-form').style.display = 'none'; }
+function createChannel() {
+  var name = $('ch-name').value.trim();
+  var desc = $('ch-desc').value.trim();
+  if (!name) return;
+  ws.send(JSON.stringify({ type: 'create-channel', name: name, description: desc, channelType: 'public' }));
+  hideCreateChannel();
+  $('ch-name').value = '';
+  $('ch-desc').value = '';
+}
+
+// Navigation
+function showPage(page) {
+  document.querySelectorAll('.admin-page').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.admin-nav-item').forEach(function(el) { el.classList.remove('active'); });
+  $('page-' + page).classList.add('active');
+  $('nav-' + page).classList.add('active');
+  if (page !== 'dashboard') loadStats();
+}
+
+// Auto-refresh
+setInterval(function() { if (ws && ws.readyState === 1) loadStats(); }, 10000);
+
+// Init
+connectAdmin();
+</script>
+</body>
+</html>

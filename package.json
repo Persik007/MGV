@@ -1,0 +1,17 @@
+{
+  "name": "mgv-messenger",
+  "version": "1.0.0",
+  "description": "MGV Messenger — real-time chat with file sharing and voice calls",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "ws": "^8.19.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "general": {
+    "id": "general",
+    "createdAt": 1771513667728,
+    "members": [],
+    "name": "general",
+    "description": "Общий чат",
+    "type": "public",
+    "createdBy": "admin"
+  },
+  "random": {
+    "id": "random",
+    "createdAt": 1771513667729,
+    "members": [],
+    "name": "random",
+    "description": "Случайные темы",
+    "type": "public",
+    "createdBy": "admin"
+  }
+}
