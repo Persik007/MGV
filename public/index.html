@@ -1,172 +1,806 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MGV Messenger</title>
-<link rel="stylesheet" href="/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MGV Messenger</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+        /* VOICE MESSAGE */
+        
+        .voice-bubble {
+            padding: 0!important;
+            background: transparent!important;
+            border: none!important;
+        }
+        
+        .voice-msg {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--bg4);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 10px 14px;
+            min-width: 220px;
+            max-width: 300px;
+            user-select: none;
+        }
+        
+        .msg-row.own .voice-msg {
+            background: var(--own-msg);
+            border-color: var(--own-border);
+        }
+        
+        .voice-play-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: none;
+            color: #fff;
+            font-size: 12px;
+            cursor: pointer;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform .1s;
+        }
+        
+        .voice-play-btn:hover {
+            transform: scale(1.1);
+        }
+        
+        .voice-waveform {
+            flex: 1;
+            height: 28px;
+            min-width: 0;
+        }
+        
+        .voice-waveform canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        .voice-duration {
+            font-size: 11px;
+            color: var(--text3);
+            flex-shrink: 0;
+            font-variant-numeric: tabular-nums;
+            min-width: 30px;
+        }
+        /* VOICE RECORDER BAR */
+        
+        #voice-recorder {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            background: var(--bg4);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+        }
+        
+        #voice-recorder.active {
+            display: flex;
+        }
+        
+        .rec-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--red);
+            flex-shrink: 0;
+            animation: recBlink 1s infinite;
+        }
+        
+        @keyframes recBlink {
+            0%,
+            100% {
+                opacity: 1
+            }
+            50% {
+                opacity: .2
+            }
+        }
+        
+        .rec-time {
+            font-size: 13px;
+            color: var(--text);
+            font-variant-numeric: tabular-nums;
+            min-width: 36px;
+            flex-shrink: 0;
+        }
+        
+        #rec-wave {
+            flex: 1;
+            height: 24px;
+            min-width: 0;
+        }
+        
+        .rec-cancel {
+            background: none;
+            border: none;
+            color: var(--text3);
+            cursor: pointer;
+            font-size: 20px;
+            line-height: 1;
+            padding: 0 4px;
+        }
+        
+        .rec-cancel:hover {
+            color: var(--red);
+        }
+        
+        .rec-send-btn {
+            background: var(--green);
+            border: none;
+            color: #fff;
+            border-radius: 50%;
+            width: 34px;
+            height: 34px;
+            font-size: 15px;
+            cursor: pointer;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform .1s;
+        }
+        
+        .rec-send-btn:hover {
+            transform: scale(1.1);
+        }
+        /* CIRCLE MESSAGE */
+        
+        .circle-wrap {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            cursor: pointer;
+            flex-shrink: 0;
+            display: inline-block;
+        }
+        
+        .circle-vid {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            object-fit: cover;
+            display: block;
+            border: 3px solid var(--accent);
+            box-shadow: 0 4px 20px rgba(59, 130, 246, .3);
+        }
+        
+        .circle-overlay {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, .4);
+            font-size: 36px;
+            color: #fff;
+            opacity: 0;
+            transition: opacity .2s;
+            pointer-events: none;
+        }
+        
+        .circle-wrap:hover .circle-overlay {
+            opacity: 1;
+        }
+        
+        .circle-dur {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, .65);
+            color: #fff;
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        /* CIRCLE RECORDER */
+        
+        #circle-recorder {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(5, 5, 10, .93);
+            z-index: 600;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 22px;
+            backdrop-filter: blur(10px);
+        }
+        
+        #circle-recorder.active {
+            display: flex;
+        }
+        
+        .circ-outer {
+            position: relative;
+            width: 260px;
+            height: 260px;
+        }
+        
+        .circ-svg {
+            position: absolute;
+            inset: -10px;
+            width: calc(100% + 20px);
+            height: calc(100% + 20px);
+            transform: rotate(-90deg);
+        }
+        
+        .circ-svg-bg {
+            fill: none;
+            stroke: rgba(255, 255, 255, .07);
+            stroke-width: 6;
+        }
+        
+        #circle-progress {
+            fill: none;
+            stroke: var(--red);
+            stroke-width: 6;
+            stroke-linecap: round;
+            stroke-dasharray: 753;
+            stroke-dashoffset: 753;
+            transition: stroke-dashoffset 1s linear;
+        }
+        
+        .circ-preview-clip {
+            width: 260px;
+            height: 260px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 3px solid rgba(239, 68, 68, .6);
+            box-shadow: 0 0 50px rgba(239, 68, 68, .35);
+        }
+        
+        #circle-preview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            transform: scaleX(-1);
+        }
+        
+        .circ-rec-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .circ-rec-label {
+            color: rgba(255, 255, 255, .65);
+            font-size: 11px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        .circ-time {
+            font-size: 28px;
+            color: #fff;
+            font-variant-numeric: tabular-nums;
+            font-family: var(--font);
+        }
+        
+        .circ-btns {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .circ-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform .1s;
+        }
+        
+        .circ-btn:hover {
+            transform: scale(1.08);
+        }
+        
+        .circ-cancel {
+            background: rgba(255, 255, 255, .12);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, .15);
+        }
+        
+        .circ-stop {
+            background: var(--green);
+            color: #fff;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, .4);
+        }
+        /* CALL OVERLAY */
+        
+        #call-overlay {
+            position: fixed;
+            inset: 0;
+            background: #000;
+            display: none;
+            z-index: 300;
+        }
+        
+        #call-overlay.active {
+            display: block;
+        }
+        
+        #remote-video {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            background: #0d1117;
+            display: none;
+        }
+        
+        #call-no-video {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            background: radial-gradient(ellipse at center, #0e1f38 0%, #060a12 100%);
+        }
+        
+        .call-av-ring {
+            width: 112px;
+            height: 112px;
+            border-radius: 50%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .call-av-ring::before,
+        .call-av-ring::after {
+            content: '';
+            position: absolute;
+            border-radius: 50%;
+            border: 2px solid rgba(16, 185, 129, .3);
+            animation: callRing 2s ease-in-out infinite;
+        }
+        
+        .call-av-ring::before {
+            inset: -10px;
+        }
+        
+        .call-av-ring::after {
+            inset: -22px;
+            animation-delay: .5s;
+        }
+        
+        @keyframes callRing {
+            0%,
+            100% {
+                opacity: .8
+            }
+            50% {
+                opacity: .2
+            }
+        }
+        
+        #call-avatar {
+            width: 112px;
+            height: 112px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 44px;
+            font-weight: 700;
+            font-family: var(--font-h);
+            border: 3px solid var(--green);
+        }
+        
+        #call-peer-name {
+            font-size: 24px;
+            font-weight: 700;
+            color: #fff;
+            font-family: var(--font-h);
+        }
+        
+        #call-status {
+            font-size: 11px;
+            color: rgba(255, 255, 255, .45);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        #call-timer {
+            font-size: 30px;
+            color: var(--green);
+            min-height: 38px;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        #call-top-info {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, .75), transparent);
+            padding: 16px 20px;
+            display: none;
+            flex-direction: row;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        #call-top-name {
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+        }
+        
+        #call-top-status {
+            font-size: 11px;
+            color: rgba(255, 255, 255, .5);
+            margin-top: 2px;
+        }
+        
+        #call-timer2 {
+            margin-left: auto;
+            font-size: 14px;
+            color: rgba(255, 255, 255, .6);
+            font-variant-numeric: tabular-nums;
+        }
+        
+        #local-video {
+            position: absolute;
+            bottom: 108px;
+            right: 20px;
+            width: 130px;
+            height: 96px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, .2);
+            z-index: 10;
+            background: #111;
+            display: none;
+        }
+        
+        #local-video-el {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        
+        .call-controls {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 14px;
+            z-index: 10;
+        }
+        
+        .call-btn {
+            width: 58px;
+            height: 58px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform .1s;
+        }
+        
+        .call-btn:hover {
+            transform: scale(1.08);
+        }
+        
+        .call-btn-mute {
+            background: rgba(255, 255, 255, .12);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, .15);
+        }
+        
+        .call-btn-mute.muted {
+            background: var(--yellow);
+            color: #000;
+            border-color: var(--yellow);
+        }
+        
+        .call-btn-video {
+            background: rgba(255, 255, 255, .12);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, .15);
+        }
+        
+        .call-btn-video.off {
+            background: var(--red);
+            color: #fff;
+        }
+        
+        .call-btn-end {
+            background: var(--red);
+            color: #fff;
+            box-shadow: 0 4px 16px rgba(239, 68, 68, .5);
+        }
+        /* INCOMING CALL */
+        
+        #incoming-call {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--bg2);
+            border: 1px solid var(--green);
+            border-radius: 16px;
+            padding: 20px 24px;
+            display: none;
+            flex-direction: column;
+            gap: 14px;
+            min-width: 280px;
+            z-index: 400;
+            box-shadow: 0 8px 40px rgba(16, 185, 129, .25);
+            animation: slideUp .3s ease-out;
+        }
+        
+        #incoming-call.active {
+            display: flex;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px)
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+        
+        #inc-label {
+            font-size: 10px;
+            color: var(--green);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        
+        #inc-name {
+            font-size: 18px;
+            font-weight: 700;
+            font-family: var(--font-h);
+        }
+        
+        .inc-btns {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        /* LIGHTBOX */
+        
+        #lightbox {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .93);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 500;
+            cursor: zoom-out;
+        }
+        
+        #lightbox.active {
+            display: flex;
+        }
+        
+        #lightbox-img {
+            max-width: 94vw;
+            max-height: 92vh;
+            border-radius: 8px;
+            object-fit: contain;
+        }
+    </style>
 </head>
+
 <body>
 
-<!-- ═══════════════ LOGIN ═══════════════ -->
-<div id="login-screen" style="display:flex;">
-  <div class="login-box">
-    <div class="login-logo">MGV<span>.</span></div>
-    <div class="login-tag">Secure Messenger</div>
-    <div class="login-err" id="login-err"></div>
-    <label class="lbl">Имя пользователя</label>
-    <input class="inp" id="l-name" type="text" placeholder="username" maxlength="30" autocomplete="username">
-    <label class="lbl">Пароль</label>
-    <input class="inp" id="l-pass" type="password" placeholder="••••••••" autocomplete="current-password">
-    <button class="btn" id="login-btn">→ ВОЙТИ / ЗАРЕГИСТРИРОВАТЬСЯ</button>
-  </div>
-</div>
-
-<!-- ═══════════════ APP ═══════════════ -->
-<div id="app">
-
-  <!-- Top Bar -->
-  <div class="topbar">
-    <div class="topbar-logo">MGV<span>.</span></div>
-    <div class="topbar-right">
-      <div class="user-chip">
-        <div class="online-dot" id="conn-dot"></div>
-        <span id="topbar-user">—</span>
-      </div>
-      <a id="admin-link" class="icon-btn" href="/admin.html" target="_blank" title="Админ панель" style="display:none;text-decoration:none;">⚙️</a>
-      <button class="icon-btn" onclick="MGV.doLogout()" title="Выйти">🚪</button>
-    </div>
-  </div>
-
-  <!-- Workspace -->
-  <div class="workspace">
-
-    <!-- ── Sidebar ── -->
-    <div class="sidebar">
-      <div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;">
-
-        <!-- Channels -->
-        <div class="sidebar-section">
-          Каналы
-          <button class="sidebar-add-btn" onclick="MGV.openCreateChannel()" title="Создать канал">+</button>
+    <!-- LOGIN -->
+    <div id="login-screen" style="display:flex;">
+        <div class="login-box">
+            <div class="login-logo">MGV<span>.</span></div>
+            <div class="login-tag">Secure Messenger</div>
+            <div class="login-err" id="login-err"></div>
+            <label class="lbl">Имя пользователя</label>
+            <input class="inp" id="l-name" type="text" placeholder="username" maxlength="30" autocomplete="username">
+            <label class="lbl">Пароль</label>
+            <input class="inp" id="l-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+            <button class="btn" id="login-btn">→ ВОЙТИ / ЗАРЕГИСТРИРОВАТЬСЯ</button>
         </div>
-        <div id="channel-list" class="sidebar-list"></div>
-
-        <div class="sidebar-divider"></div>
-
-        <!-- Online users -->
-        <div class="sidebar-section">Онлайн</div>
-        <div id="online-list"></div>
-
-      </div>
     </div>
 
-    <!-- ── Chat Area ── -->
-    <div class="chat-area">
-
-      <!-- No chat selected -->
-      <div class="no-chat" id="no-chat">
-        <div class="no-chat-logo">MGV<span>.</span></div>
-        <div class="no-chat-text">Выберите канал или пользователя</div>
-      </div>
-
-      <!-- Chat view -->
-      <div id="chat-view" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
-
-        <!-- Chat header -->
-        <div class="chat-header">
-          <span class="chat-header-icon">#</span>
-          <div>
-            <span class="chat-header-name" id="chat-name">—</span>
-            <span class="chat-header-desc" id="chat-desc"></span>
-          </div>
-          <div class="chat-header-right">
-            <button class="icon-btn" id="call-btn" title="Голосовой звонок">📞</button>
-          </div>
-        </div>
-
-        <!-- Messages -->
-        <div id="messages"></div>
-        <div class="typing-indicator" id="typing-indicator"></div>
-
-        <!-- Input area -->
-        <div class="input-area">
-          <!-- Upload preview -->
-          <div id="upload-preview" style="display:none;" class="upload-preview">
-            <span>📎</span>
-            <span class="up-name" id="upload-preview-name">—</span>
-            <button class="upload-cancel" id="upload-cancel-btn">✕</button>
-          </div>
-
-          <div class="input-row">
-            <div class="input-actions">
-              <button class="input-icon-btn" onclick="MGV.attachFile()" title="Прикрепить файл">📎</button>
+    <!-- APP -->
+    <div id="app">
+        <div class="topbar">
+            <div class="topbar-logo">MGV<span>.</span></div>
+            <div class="topbar-right">
+                <div class="user-chip">
+                    <div class="online-dot" id="conn-dot"></div>
+                    <span id="topbar-user">—</span>
+                </div>
+                <a id="admin-link" class="icon-btn" href="/admin.html" target="_blank" title="Админ" style="display:none;text-decoration:none;">⚙️</a>
+                <button class="icon-btn" onclick="MGV.doLogout()" title="Выйти">🚪</button>
             </div>
-            <textarea id="msg-input" rows="1" placeholder="Сообщение..."></textarea>
-            <div class="input-actions">
-              <button class="send-btn" id="send-btn" title="Отправить">➤</button>
-            </div>
-          </div>
         </div>
 
-      </div>
+        <div class="workspace">
+            <div class="sidebar">
+                <div style="overflow-y:auto;flex:1;display:flex;flex-direction:column;">
+                    <div class="sidebar-section">Каналы<button class="sidebar-add-btn" onclick="MGV.openCreateChannel()">+</button></div>
+                    <div id="channel-list" class="sidebar-list"></div>
+                    <div class="sidebar-divider"></div>
+                    <div class="sidebar-section">Онлайн</div>
+                    <div id="online-list"></div>
+                </div>
+            </div>
+
+            <div class="chat-area">
+                <div class="no-chat" id="no-chat">
+                    <div class="no-chat-logo">MGV<span>.</span></div>
+                    <div class="no-chat-text">Выберите канал или пользователя</div>
+                </div>
+
+                <div id="chat-view" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+                    <div class="chat-header">
+                        <span class="chat-header-icon">#</span>
+                        <div>
+                            <span class="chat-header-name" id="chat-name">—</span>
+                            <span class="chat-header-desc" id="chat-desc"></span>
+                        </div>
+                        <div class="chat-header-right" id="call-buttons" style="display:none;gap:6px;">
+                            <button class="icon-btn" title="Голосовой звонок" onclick="MGV.startCall('audio')">📞</button>
+                            <button class="icon-btn" title="Видеозвонок" onclick="MGV.startCall('video')">📹</button>
+                        </div>
+                    </div>
+
+                    <div id="messages"></div>
+                    <div class="typing-indicator" id="typing-indicator"></div>
+
+                    <div class="input-area">
+                        <div id="upload-preview" style="display:none;" class="upload-preview">
+                            <span>📎</span>
+                            <span class="up-name" id="upload-preview-name">—</span>
+                            <button class="upload-cancel" id="upload-cancel-btn">✕</button>
+                        </div>
+                        <div id="voice-recorder">
+                            <div class="rec-dot"></div>
+                            <span class="rec-time" id="rec-time">0:00</span>
+                            <canvas id="rec-wave" height="24"></canvas>
+                            <button class="rec-cancel" id="rec-cancel">✕</button>
+                            <button class="rec-send-btn" id="rec-send">✓</button>
+                        </div>
+                        <div class="input-row">
+                            <div class="input-actions">
+                                <button class="input-icon-btn" onclick="MGV.attachFile()" title="Файл">📎</button>
+                            </div>
+                            <textarea id="msg-input" rows="1" placeholder="Сообщение..."></textarea>
+                            <div class="input-actions">
+                                <button class="input-icon-btn" id="btn-voice" onclick="MGV.startVoice()" title="Голосовое" style="font-size:19px;">🎤</button>
+                                <button class="input-icon-btn" id="btn-circle" onclick="MGV.startCircle()" title="Кружок" style="font-size:19px;">⊙</button>
+                                <button class="send-btn" id="send-btn" style="display:none;" onclick="MGV.sendMsg()">➤</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-  </div>
-</div>
 
-<!-- ═══════════════ MODALS ═══════════════ -->
-
-<!-- Create Channel -->
-<div class="modal-overlay" id="create-channel-modal">
-  <div class="modal">
-    <div class="modal-title">Создать канал</div>
-    <div class="form-group">
-      <label class="lbl">Название</label>
-      <input class="inp" id="new-ch-name" type="text" placeholder="мой-канал" maxlength="30">
+    <!-- CREATE CHANNEL MODAL -->
+    <div class="modal-overlay" id="create-channel-modal">
+        <div class="modal">
+            <div class="modal-title">Создать канал</div>
+            <div class="form-group">
+                <label class="lbl">Название</label>
+                <input class="inp" id="new-ch-name" type="text" placeholder="мой-канал" maxlength="30">
+            </div>
+            <div class="form-group">
+                <label class="lbl">Описание</label>
+                <input class="inp" id="new-ch-desc" type="text" placeholder="О чём этот канал" maxlength="100">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost btn-sm" onclick="MGV.closeCreateChannel()">Отмена</button>
+                <button class="btn btn-sm" onclick="MGV.submitCreateChannel()">Создать</button>
+            </div>
+        </div>
     </div>
-    <div class="form-group">
-      <label class="lbl">Описание</label>
-      <input class="inp" id="new-ch-desc" type="text" placeholder="О чём этот канал" maxlength="100">
+
+    <!-- CIRCLE RECORDER -->
+    <div id="circle-recorder">
+        <div class="circ-rec-row">
+            <div class="rec-dot"></div>
+            <span class="circ-rec-label">Запись кружка</span>
+        </div>
+        <div class="circ-outer">
+            <svg class="circ-svg" viewBox="0 0 260 260">
+      <circle class="circ-svg-bg" cx="130" cy="130" r="120"/>
+      <circle id="circle-progress" cx="130" cy="130" r="120"/>
+    </svg>
+            <div class="circ-preview-clip">
+                <video id="circle-preview" autoplay muted playsinline></video>
+            </div>
+        </div>
+        <div class="circ-time" id="circle-time">0:00</div>
+        <div class="circ-btns">
+            <button class="circ-btn circ-cancel" onclick="MGV.cancelCircle()">✕</button>
+            <button class="circ-btn circ-stop" onclick="MGV.stopCircle()">✓</button>
+        </div>
     </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost btn-sm" onclick="MGV.closeCreateChannel()">Отмена</button>
-      <button class="btn btn-sm" onclick="MGV.submitCreateChannel()">Создать</button>
+
+    <!-- CALL OVERLAY -->
+    <div id="call-overlay">
+        <video id="remote-video" autoplay playsinline></video>
+        <div id="call-no-video">
+            <div class="call-av-ring">
+                <div id="call-avatar">?</div>
+            </div>
+            <div id="call-peer-name">—</div>
+            <div id="call-status">ЗВОНИМ...</div>
+            <div id="call-timer"></div>
+        </div>
+        <div id="call-top-info">
+            <div>
+                <div id="call-top-name">—</div>
+                <div id="call-top-status">СОЕДИНЕНО</div>
+            </div>
+            <div id="call-timer2"></div>
+        </div>
+        <div id="local-video">
+            <video id="local-video-el" autoplay muted playsinline></video>
+        </div>
+        <div class="call-controls">
+            <button class="call-btn call-btn-mute" id="mute-btn" onclick="MGV.toggleMute()">🎤</button>
+            <button class="call-btn call-btn-video" id="video-btn" onclick="MGV.toggleVideo()">📹</button>
+            <button class="call-btn call-btn-end" onclick="MGV.endCall()">📵</button>
+        </div>
     </div>
-  </div>
-</div>
 
-<!-- ═══════════════ CALL OVERLAY ═══════════════ -->
-<div id="call-overlay">
-  <div class="call-avatar" id="call-avatar">?</div>
-  <div class="call-name" id="call-peer-name">—</div>
-  <div class="call-status" id="call-status">ЗВОНИМ...</div>
-  <div class="call-timer" id="call-timer"></div>
-  <div class="call-controls">
-    <button class="call-btn call-btn-mute" id="mute-btn" onclick="MGV.toggleMute()">🎤</button>
-    <button class="call-btn call-btn-end" onclick="MGV.endCall()">📵</button>
-  </div>
-</div>
+    <!-- INCOMING CALL -->
+    <div id="incoming-call">
+        <div id="inc-label">📞 Входящий звонок</div>
+        <div id="inc-name">—</div>
+        <div class="inc-btns">
+            <button class="btn btn-danger btn-sm" onclick="MGV.declineCall()">Отклонить</button>
+            <button class="btn btn-green btn-sm" onclick="MGV.answerCall(false)">📞 Аудио</button>
+            <button class="btn btn-sm" id="ans-video-btn" onclick="MGV.answerCall(true)" style="display:none;">📹 Видео</button>
+        </div>
+    </div>
 
-<!-- Incoming Call -->
-<div id="incoming-call">
-  <div class="inc-label">📞 Входящий звонок</div>
-  <div class="inc-name" id="inc-name">—</div>
-  <div class="inc-btns">
-    <button class="btn btn-danger btn-sm" onclick="MGV.declineCall()">Отклонить</button>
-    <button class="btn btn-green btn-sm" onclick="MGV.answerCall()">Принять</button>
-  </div>
-</div>
+    <!-- LIGHTBOX -->
+    <div id="lightbox">
+        <img id="lightbox-img" src="" alt="">
+    </div>
 
-<!-- Image Lightbox -->
-<div id="lightbox">
-  <img src="" alt="">
-</div>
+    <input type="file" id="file-input" style="display:none" accept="*/*">
+    <audio id="remote-audio" autoplay playsinline></audio>
 
-<!-- Hidden file input -->
-<input type="file" id="file-input" style="display:none" accept="*/*">
-
-<audio id="remote-audio" autoplay></audio>
-
-<script src="/app.js"></script>
+    <script src="/app.js"></script>
 </body>
+
 </html>
