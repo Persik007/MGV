@@ -800,6 +800,27 @@
     <input type="file" id="file-input" style="display:none" accept="*/*">
     <audio id="remote-audio" autoplay playsinline></audio>
 
+    <!-- MOBILE: sidebar overlay backdrop -->
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="MGV.closeSidebar()"></div>
+
+    <!-- MOBILE: bottom navigation bar -->
+    <nav class="mobile-nav" id="mobile-nav">
+        <button class="mobile-nav-btn" id="mnav-channels" onclick="MGV.mobileTab('channels')">
+    <span>#</span>
+    <span>Каналы</span>
+    <span class="mnav-badge" id="mnav-ch-badge" style="display:none"></span>
+  </button>
+        <button class="mobile-nav-btn" id="mnav-users" onclick="MGV.mobileTab('users')">
+    <span>👥</span>
+    <span>Чаты</span>
+    <span class="mnav-badge" id="mnav-dm-badge" style="display:none"></span>
+  </button>
+        <button class="mobile-nav-btn" id="mnav-back" onclick="MGV.mobileBack()" style="display:none;">
+    <span>←</span>
+    <span>Назад</span>
+  </button>
+    </nav>
+
     <script src="/app.js"></script>
 </body>
 

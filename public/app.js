@@ -89,21 +89,17 @@
         connectWS();
     }
 
-    function doLogout() {
-        localStorage.removeItem('mgv_n');
+    function doLogout() { localStorage.removeItem('mgv_n');
         localStorage.removeItem('mgv_p');
-        location.reload();
-    }
+        location.reload(); }
 
     // WS
     function connectWS() {
         var proto = location.protocol === 'https:' ? 'wss' : 'ws';
         state.ws = new WebSocket(proto + '://' + location.host);
         state.ws.onopen = function() { wsSend({ type: 'auth', name: state.myName, pass: state.myPass }); };
-        state.ws.onclose = function() {
-            setConn(false);
-            setTimeout(connectWS, 2000);
-        };
+        state.ws.onclose = function() { setConn(false);
+            setTimeout(connectWS, 2000); };
         state.ws.onmessage = function(e) { try { handleMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
     }
 
@@ -234,6 +230,13 @@
         $('msg-input').focus();
         renderSidebar();
         renderOnline();
+        // Mobile: close drawer, show back btn
+        if (typeof isMobile !== 'undefined' && isMobile) {
+            closeSidebar();
+            var bb = $('mnav-back');
+            if (bb) bb.style.display = '';
+        }
+        if (typeof updateMobileBadges === 'function') updateMobileBadges();
     }
 
     function getPeer() {
@@ -260,6 +263,7 @@
             state.unread[room] = (state.unread[room] || 0) + 1;
             renderSidebar();
             renderOnline();
+            if (typeof updateMobileBadges === 'function') updateMobileBadges();
             if (Notification && Notification.permission === 'granted')
                 new Notification('MGV: ' + message.from, { body: message.text || '🎤 Медиа' });
         }
@@ -305,6 +309,16 @@
                 delBtn + '</div>';
         } else if (m.file && isImage(m.file.mime)) {
             body += '<div class="msg-bubble">' + delBtn + '<img class="msg-img" src="' + esc(m.file.url) + '" onclick="MGV.openImage(\'' + esc(m.file.url) + '\')" loading="lazy"></div>';
+        } else if (m.file && m.file.mime && m.file.mime.startsWith('video/')) {
+            body += '<div class="msg-bubble">' + delBtn +
+                '<video class="msg-video" src="' + esc(m.file.url) + '" controls playsinline preload="metadata"></video>' +
+                '<div class="msg-file-info" style="font-size:11px;color:var(--text3);margin-top:4px">' + esc(m.file.name || '') + '</div>' +
+                '</div>';
+        } else if (m.file && m.file.mime && m.file.mime.startsWith('audio/')) {
+            body += '<div class="msg-bubble">' + delBtn +
+                '<audio class="msg-audio" src="' + esc(m.file.url) + '" controls preload="metadata"></audio>' +
+                '<div class="msg-file-info" style="font-size:11px;color:var(--text3);margin-top:4px">' + esc(m.file.name || '') + '</div>' +
+                '</div>';
         } else if (m.file) {
             body += '<div class="msg-bubble">' + delBtn +
                 '<a class="msg-file" href="' + esc(m.file.url) + '" target="_blank" download>' +
@@ -363,13 +377,10 @@
         var input = $('msg-input'),
             text = input.value.trim();
         if (!state.currentRoom) return;
-        if (state.pendingFile) {
-            dispatchMsg({ file: state.pendingFile, text: text });
+        if (state.pendingFile) { dispatchMsg({ file: state.pendingFile, text: text });
             clearPendingFile();
             input.value = '';
-            updateButtons();
-            return;
-        }
+            updateButtons(); return; }
         if (!text) return;
         input.value = '';
         updateButtons();
@@ -399,58 +410,40 @@
         $('send-btn').style.display = has ? 'flex' : 'none';
     }
 
-    function deleteMsg(msgId) {
-        if (!confirm('Удалить?')) return;
-        wsSend({ type: 'delete-msg', room: state.currentRoom, msgId: msgId });
-    }
+    function deleteMsg(msgId) { if (!confirm('Удалить?')) return;
+        wsSend({ type: 'delete-msg', room: state.currentRoom, msgId: msgId }); }
 
     // UPLOAD
-    function handleFileSelect(e) {
-        var f = e.target.files[0];
-        if (!f) return;
+    function handleFileSelect(e) { var f = e.target.files[0]; if (!f) return;
         uploadFile(f);
-        e.target.value = '';
-    }
+        e.target.value = ''; }
 
     function uploadFile(file, msgType, meta) {
         if (file.size > 100 * 1024 * 1024) { alert('Макс 100MB'); return; }
-        if (!msgType) {
-            $('upload-preview-name').textContent = file.name + ' (' + fmtSize(file.size) + ')';
-            $('upload-preview').style.display = 'flex';
-        }
+        if (!msgType) { $('upload-preview-name').textContent = file.name + ' (' + fmtSize(file.size) + ')';
+            $('upload-preview').style.display = 'flex'; }
         var fd = new FormData();
         fd.append('file', file);
         if (meta) fd.append('meta', JSON.stringify(meta));
         fetch('/upload?user=' + encodeURIComponent(state.myName), { method: 'POST', body: fd })
             .then(function(r) { return r.json(); })
             .then(function(data) {
-                if (data.error) {
-                    alert('Ошибка: ' + data.error);
-                    clearPendingFile();
-                    return;
-                }
+                if (data.error) { alert('Ошибка: ' + data.error);
+                    clearPendingFile(); return; }
                 if (meta && meta.duration !== undefined) data.duration = meta.duration;
                 if (meta && meta.peaks) data.peaks = meta.peaks;
-                if (msgType) {
-                    $('upload-preview').style.display = 'none';
-                    dispatchMsg({ msgType: msgType, file: data });
-                } else {
-                    state.pendingFile = data;
-                    updateButtons();
-                }
+                if (msgType) { $('upload-preview').style.display = 'none';
+                    dispatchMsg({ msgType: msgType, file: data }); } else { state.pendingFile = data;
+                    updateButtons(); }
             })
-            .catch(function(err) {
-                alert('Ошибка загрузки');
+            .catch(function(err) { alert('Ошибка загрузки');
                 clearPendingFile();
-                console.error(err);
-            });
+                console.error(err); });
     }
 
-    function clearPendingFile() {
-        state.pendingFile = null;
+    function clearPendingFile() { state.pendingFile = null;
         $('upload-preview').style.display = 'none';
-        updateButtons();
-    }
+        updateButtons(); }
 
     // ═══ VOICE MESSAGE ═══
     async function startVoice() {
@@ -515,10 +508,8 @@
     function stopVoice() { if (voiceRec.mediaRecorder && voiceRec.mediaRecorder.state !== 'inactive') voiceRec.mediaRecorder.stop(); }
 
     function cancelVoice() {
-        if (voiceRec.mediaRecorder && voiceRec.mediaRecorder.state !== 'inactive') {
-            voiceRec.mediaRecorder.onstop = null;
-            voiceRec.mediaRecorder.stop();
-        }
+        if (voiceRec.mediaRecorder && voiceRec.mediaRecorder.state !== 'inactive') { voiceRec.mediaRecorder.onstop = null;
+            voiceRec.mediaRecorder.stop(); }
         cleanupVoice();
     }
 
@@ -546,10 +537,8 @@
 
     function normPeaks(arr, len) {
         var r = [];
-        for (var i = 0; i < len; i++) {
-            var idx = Math.floor(i * arr.length / len);
-            r.push(Math.max(0.04, Math.min(1, arr[idx] || 0)));
-        }
+        for (var i = 0; i < len; i++) { var idx = Math.floor(i * arr.length / len);
+            r.push(Math.max(0.04, Math.min(1, arr[idx] || 0))); }
         return r;
     }
 
@@ -566,15 +555,10 @@
         currentAudio = audio;
         if (btn) btn.textContent = '⏸';
         audio.addEventListener('timeupdate', function() { if (durEl) durEl.textContent = fmtDur(audio.currentTime); });
-        audio.addEventListener('ended', function() {
-            if (btn) btn.textContent = '▶';
-            if (durEl && audio.duration) durEl.textContent = fmtDur(audio.duration);
-            currentAudio = null;
-        });
-        audio.addEventListener('error', function() {
-            if (btn) btn.textContent = '▶';
-            currentAudio = null;
-        });
+        audio.addEventListener('ended', function() { if (btn) btn.textContent = '▶'; if (durEl && audio.duration) durEl.textContent = fmtDur(audio.duration);
+            currentAudio = null; });
+        audio.addEventListener('error', function() { if (btn) btn.textContent = '▶';
+            currentAudio = null; });
         audio.play().catch(function(e) { console.error(e); if (btn) btn.textContent = '▶'; });
     }
 
@@ -623,10 +607,8 @@
     function stopCircle() { if (circleRec.mediaRecorder && circleRec.mediaRecorder.state !== 'inactive') circleRec.mediaRecorder.stop(); }
 
     function cancelCircle() {
-        if (circleRec.mediaRecorder && circleRec.mediaRecorder.state !== 'inactive') {
-            circleRec.mediaRecorder.onstop = null;
-            circleRec.mediaRecorder.stop();
-        }
+        if (circleRec.mediaRecorder && circleRec.mediaRecorder.state !== 'inactive') { circleRec.mediaRecorder.onstop = null;
+            circleRec.mediaRecorder.stop(); }
         cleanupCircle();
     }
 
@@ -653,28 +635,18 @@
         var vid = wrap.querySelector('.circle-vid'),
             overlay = wrap.querySelector('.circle-overlay');
         if (!vid) return;
-        if (vid.paused) {
-            vid.play().catch(function() {});
-            if (overlay) overlay.style.opacity = '0';
-            vid.onended = function() { if (overlay) overlay.style.opacity = '1'; };
-        } else {
-            vid.pause();
-            vid.currentTime = 0;
-            if (overlay) overlay.style.opacity = '1';
-        }
+        if (vid.paused) { vid.play().catch(function() {}); if (overlay) overlay.style.opacity = '0';
+            vid.onended = function() { if (overlay) overlay.style.opacity = '1'; }; } else { vid.pause();
+            vid.currentTime = 0; if (overlay) overlay.style.opacity = '1'; }
     }
 
     // LIGHTBOX
-    function openImage(url) {
-        $('lightbox-img').src = url;
-        $('lightbox').classList.add('active');
-    }
+    function openImage(url) { $('lightbox-img').src = url;
+        $('lightbox').classList.add('active'); }
 
     // CHANNELS
-    function openCreateChannel() {
-        if (state.myRole !== 'admin') return;
-        $('create-channel-modal').classList.add('active');
-    }
+    function openCreateChannel() { if (state.myRole !== 'admin') return;
+        $('create-channel-modal').classList.add('active'); }
 
     function closeCreateChannel() { $('create-channel-modal').classList.remove('active'); }
 
@@ -691,18 +663,13 @@
     // ═══ WebRTC ═══
     async function getIce() {
         if (cachedIce) return cachedIce;
-        try {
-            var r = await fetch(TURN_API);
-            cachedIce = await r.json();
-            return cachedIce;
-        } catch (e) { return [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]; }
+        try { var r = await fetch(TURN_API);
+            cachedIce = await r.json(); return cachedIce; } catch (e) { return [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]; }
     }
 
     async function makePc(remoteName) {
-        if (rtc.pc) {
-            try { rtc.pc.close(); } catch (e) {}
-            rtc.pc = null;
-        }
+        if (rtc.pc) { try { rtc.pc.close(); } catch (e) {}
+            rtc.pc = null; }
         rtc.remoteDescSet = false;
         rtc.iceQueue = [];
         var iceServers = await getIce();
@@ -730,19 +697,15 @@
             var s = rtc.pc && rtc.pc.connectionState;
             console.log('[RTC]', s);
             if (s === 'connected') { setCallStatus('СОЕДИНЕНО'); if (!rtc.timerInt) startCallTimer(); }
-            if (s === 'failed') {
-                addSysMsg('Связь потеряна');
-                rtcCleanup();
-            }
+            if (s === 'failed') { addSysMsg('Связь потеряна');
+                rtcCleanup(); }
         };
         rtc.pc.oniceconnectionstatechange = function() {
             var s = rtc.pc && rtc.pc.iceConnectionState;
             console.log('[ICE]', s);
             if (s === 'connected' || s === 'completed') { setCallStatus('СОЕДИНЕНО'); if (!rtc.timerInt) startCallTimer(); }
-            if (s === 'failed') {
-                addSysMsg('ICE failed');
-                rtcCleanup();
-            }
+            if (s === 'failed') { addSysMsg('ICE failed');
+                rtcCleanup(); }
         };
     }
 
@@ -768,12 +731,10 @@
 
         showCallOverlay(peer);
         setCallStatus('ПОДГОТОВКА...');
-        if (rtc.withVideo) {
-            var lve = $('local-video-el');
+        if (rtc.withVideo) { var lve = $('local-video-el');
             lve.srcObject = rtc.localStream;
             lve.play().catch(function() {});
-            $('local-video').style.display = 'block';
-        }
+            $('local-video').style.display = 'block'; }
         await makePc(peer);
         var offer = await rtc.pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
         await rtc.pc.setLocalDescription(offer);
@@ -799,12 +760,8 @@
             osc.connect(g);
             g.connect(ac.destination);
             osc.start();
-            setTimeout(function() {
-                try {
-                    osc.stop();
-                    ac.close();
-                } catch (e) {}
-            }, 900);
+            setTimeout(function() { try { osc.stop();
+                    ac.close(); } catch (e) {} }, 900);
         } catch (e) {}
     }
 
@@ -820,12 +777,10 @@
             try { rtc.localStream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e2) { alert('Нет доступа: ' + e2.message); return; }
             rtc.withVideo = false;
         }
-        if (rtc.withVideo) {
-            var lve = $('local-video-el');
+        if (rtc.withVideo) { var lve = $('local-video-el');
             lve.srcObject = rtc.localStream;
             lve.play().catch(function() {});
-            $('local-video').style.display = 'block';
-        }
+            $('local-video').style.display = 'block'; }
         showCallOverlay(rtc.incFrom);
         setCallStatus('СОЕДИНЯЕМСЯ...');
         await makePc(rtc.incFrom);
@@ -856,37 +811,24 @@
         if (rtc.remoteDescSet) { try { await rtc.pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch (e) {} } else rtc.iceQueue.push(msg.candidate);
     }
 
-    function endCall() {
-        var peer = state.currentPeer || rtc.incFrom;
-        if (peer) wsSend({ type: 'call-end', to: peer });
-        rtcCleanup();
-    }
+    function endCall() { var peer = state.currentPeer || rtc.incFrom; if (peer) wsSend({ type: 'call-end', to: peer });
+        rtcCleanup(); }
 
-    function rtcRemoteEnd() {
-        addSysMsg('Звонок завершён');
-        rtcCleanup();
-    }
+    function rtcRemoteEnd() { addSysMsg('Звонок завершён');
+        rtcCleanup(); }
 
-    function rtcCallDeclined() {
-        setCallStatus('ОТКЛОНЕНО');
-        setTimeout(rtcCleanup, 1500);
-    }
+    function rtcCallDeclined() { setCallStatus('ОТКЛОНЕНО');
+        setTimeout(rtcCleanup, 1500); }
 
     function rtcCleanup() {
-        if (rtc.pc) {
-            try { rtc.pc.close(); } catch (e) {}
-            rtc.pc = null;
-        }
-        if (rtc.localStream) {
-            rtc.localStream.getTracks().forEach(function(t) { t.stop(); });
-            rtc.localStream = null;
-        }
+        if (rtc.pc) { try { rtc.pc.close(); } catch (e) {}
+            rtc.pc = null; }
+        if (rtc.localStream) { rtc.localStream.getTracks().forEach(function(t) { t.stop(); });
+            rtc.localStream = null; }
         $('call-overlay').classList.remove('active');
         var rv = $('remote-video');
-        if (rv) {
-            try { rv.srcObject = null; } catch (e) {}
-            rv.style.display = 'none';
-        }
+        if (rv) { try { rv.srcObject = null; } catch (e) {}
+            rv.style.display = 'none'; }
         var lve = $('local-video-el');
         if (lve) { try { lve.srcObject = null; } catch (e) {} }
         $('local-video').style.display = 'none';
@@ -894,10 +836,8 @@
         if (ra) { try { ra.srcObject = null; } catch (e) {} }
         $('call-no-video').style.display = 'flex';
         $('call-top-info').style.display = 'none';
-        if (rtc.timerInt) {
-            clearInterval(rtc.timerInt);
-            rtc.timerInt = null;
-        }
+        if (rtc.timerInt) { clearInterval(rtc.timerInt);
+            rtc.timerInt = null; }
         $('call-timer').textContent = '';
         var ct2 = $('call-timer2');
         if (ct2) ct2.textContent = '';
@@ -957,16 +897,144 @@
     }
 
     // INIT
+    // ═══════════════════════════════════════
+    // MOBILE UX
+    // ═══════════════════════════════════════
+    var isMobile = false;
+    var sidebarMode = 'channels'; // 'channels' | 'users'
+
+    function checkMobile() {
+        isMobile = window.innerWidth <= 700;
+    }
+
+    function openSidebar(mode) {
+        sidebarMode = mode || sidebarMode;
+        var sidebar = document.querySelector('.sidebar');
+        var overlay = $('sidebar-overlay');
+        if (!sidebar) return;
+
+        // Show right tab content
+        var chList = $('channel-list'),
+            ouList = $('online-list');
+        var chHdr = document.querySelector('.sidebar-section');
+        // Find sections
+        var sections = document.querySelectorAll('.sidebar-section');
+        if (sidebarMode === 'channels') {
+            if (chList) chList.style.display = '';
+            if (sections[0]) sections[0].style.display = '';
+            if (ouList) ouList.style.display = 'none';
+            if (sections[1]) sections[1].style.display = 'none';
+            document.querySelector('.sidebar-divider') && (document.querySelector('.sidebar-divider').style.display = 'none');
+        } else {
+            if (chList) chList.style.display = 'none';
+            if (sections[0]) sections[0].style.display = 'none';
+            if (ouList) ouList.style.display = '';
+            if (sections[1]) sections[1].style.display = '';
+            document.querySelector('.sidebar-divider') && (document.querySelector('.sidebar-divider').style.display = 'none');
+        }
+
+        sidebar.classList.add('open');
+        if (overlay) { overlay.classList.add('visible'); }
+        // Update nav active
+        updateMobileNav(mode);
+    }
+
+    function closeSidebar() {
+        var sidebar = document.querySelector('.sidebar');
+        var overlay = $('sidebar-overlay');
+        if (sidebar) sidebar.classList.remove('open');
+        if (overlay) { overlay.classList.remove('visible'); }
+    }
+
+    function mobileTab(tab) {
+        if (!isMobile) { return; }
+        sidebarMode = tab;
+        // If sidebar already open on same tab — close it
+        var sidebar = document.querySelector('.sidebar');
+        if (sidebar && sidebar.classList.contains('open') && sidebarMode === tab) {
+            closeSidebar();
+            return;
+        }
+        openSidebar(tab);
+    }
+
+    function mobileBack() {
+        // Go back to "no chat" view
+        $('no-chat').style.display = '';
+        $('chat-view').style.display = 'none';
+        state.currentRoom = null;
+        $('mnav-back').style.display = 'none';
+        document.querySelectorAll('.sidebar-item').forEach(function(el) { el.classList.remove('active'); });
+    }
+
+    function updateMobileNav(mode) {
+        var btns = {
+            channels: $('mnav-channels'),
+            users: $('mnav-users')
+        };
+        Object.keys(btns).forEach(function(k) {
+            if (btns[k]) btns[k].classList.toggle('active', k === mode);
+        });
+    }
+
+    function updateMobileBadges() {
+        var chTotal = 0,
+            dmTotal = 0;
+        Object.keys(state.unread).forEach(function(room) {
+            if (state.unread[room] > 0) {
+                if (room.startsWith('dm:')) dmTotal += state.unread[room];
+                else chTotal += state.unread[room];
+            }
+        });
+        var chB = $('mnav-ch-badge'),
+            dmB = $('mnav-dm-badge');
+        if (chB) { chB.textContent = chTotal;
+            chB.style.display = chTotal ? '' : 'none'; }
+        if (dmB) { dmB.textContent = dmTotal;
+            dmB.style.display = dmTotal ? '' : 'none'; }
+    }
+
+    // Mobile hooks called from openRoom and onNewMsg directly
+
+    // Touch swipe support for sidebar
+    function initSwipe() {
+        var startX = 0,
+            startY = 0;
+        document.addEventListener('touchstart', function(e) {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+        }, { passive: true });
+        document.addEventListener('touchend', function(e) {
+            var dx = e.changedTouches[0].clientX - startX;
+            var dy = e.changedTouches[0].clientY - startY;
+            // Swipe up from bottom → open sidebar
+            if (Math.abs(dy) > Math.abs(dx) && dy < -60 && startY > window.innerHeight * 0.7) {
+                var sidebar = document.querySelector('.sidebar');
+                if (sidebar && !sidebar.classList.contains('open')) openSidebar(sidebarMode);
+            }
+            // Swipe down → close sidebar
+            if (Math.abs(dy) > Math.abs(dx) && dy > 60) {
+                closeSidebar();
+            }
+        }, { passive: true });
+    }
+
+    // ═══════════════════════════════════════
+    // INIT
+    // ═══════════════════════════════════════
+    document.addEventListener('DOMContentLoaded', function() {
+        init();
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        initSwipe();
+    });
+
     function init() {
         $('l-name').addEventListener('keydown', function(e) { if (e.key === 'Enter') $('l-pass').focus(); });
         $('l-pass').addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); });
         $('login-btn').addEventListener('click', doLogin);
-        $('msg-input').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendMsg();
-            }
-        });
+        $('msg-input').addEventListener('keydown', function(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault();
+                sendMsg(); } });
         $('msg-input').addEventListener('input', onTypingInput);
         $('file-input').addEventListener('change', handleFileSelect);
         $('upload-cancel-btn').addEventListener('click', clearPendingFile);
@@ -980,14 +1048,10 @@
         if ($('admin-link')) $('admin-link').style.display = 'none';
         var n = localStorage.getItem('mgv_n'),
             p = localStorage.getItem('mgv_p');
-        if (n && p) {
-            state.myName = n;
+        if (n && p) { state.myName = n;
             state.myPass = p;
-            connectWS();
-        }
+            connectWS(); }
     }
-
-    document.addEventListener('DOMContentLoaded', init);
 
     window.MGV = {
         doLogin,
@@ -1014,6 +1078,9 @@
         submitCreateChannel,
         clearPendingFile,
         openRoom,
+        mobileTab,
+        mobileBack,
+        closeSidebar,
         attachFile: function() { $('file-input').click(); }
     };
 
