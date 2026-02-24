@@ -38,9 +38,6 @@
     var CR = { mr: null, stream: null, chunks: [], timer: null, secs: 0 };
     var VP = { el: null, uid: null };
 
-    var TURN = 'https://mgv.metered.live/api/v1/turn/credentials?apiKey=c26a2ef76f54f5c0d4e8f66a0d11cb69aa2b';
-    var iceCache = null;
-
     var COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#84cc16'];
 
     function gc(n) { var h = 0; for (var i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) % COLORS.length; return COLORS[h]; }
@@ -712,134 +709,262 @@
         $('new-ch-desc').value = '';
     }
 
-    // ═══ WebRTC ═══
-    async function getIce() {
-        if (iceCache) return iceCache;
-        try { var r = await fetch(TURN);
-            iceCache = await r.json(); return iceCache; } catch (e) { return [{ urls: 'stun:stun.l.google.com:19302' }]; }
+
+    // ═══════════════════════════════════════
+    // WebRTC — ЗВОНКИ
+    // ═══════════════════════════════════════
+
+    var ICE = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' }
+    ];
+
+    // ── Получить медиа-поток ──
+    async function getMedia(wantVideo) {
+        // Всегда запрашиваем с echoCancellation и noiseSuppression
+        var audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+        var video = wantVideo ?
+            { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } :
+            false;
+        try {
+            return await navigator.mediaDevices.getUserMedia({ audio: audio, video: video });
+        } catch (e) {
+            if (wantVideo) {
+                // Камера недоступна — пробуем только аудио
+                try { return await navigator.mediaDevices.getUserMedia({ audio: audio }); } catch (e2) { throw new Error('Нет доступа к микрофону: ' + e2.message); }
+            }
+            throw new Error('Нет доступа к микрофону: ' + e.message);
+        }
     }
 
-    async function makePc(remote) {
+    // ── Создать PeerConnection ──
+    function buildPc(remoteName) {
         if (RTC.pc) { try { RTC.pc.close(); } catch (e) {}
             RTC.pc = null; }
         RTC.sdpSet = false;
         RTC.iceQ = [];
-        var ice = await getIce();
-        RTC.pc = new RTCPeerConnection({ iceServers: ice, bundlePolicy: 'max-bundle' });
-        RTC.local.getTracks().forEach(function(t) { RTC.pc.addTrack(t, RTC.local); });
-        RTC.pc.onicecandidate = function(e) { if (e.candidate) wsSend({ type: 'ice', to: remote, candidate: e.candidate }); };
-        RTC.pc.ontrack = function(e) {
-            var tk = e.track;
-            if (tk.kind === 'audio') {
-                var a = $('remote-audio');
-                if (!a.srcObject) a.srcObject = new MediaStream();
-                a.srcObject.addTrack(tk);
-                a.play().catch(function() {});
-            } else {
-                var v = $('remote-vid');
-                if (!v.srcObject) v.srcObject = new MediaStream();
-                v.srcObject.addTrack(tk);
-                v.style.display = 'block';
+
+        var pc = new RTCPeerConnection({ iceServers: ICE, iceCandidatePoolSize: 4 });
+        RTC.pc = pc;
+
+        // Добавляем локальные треки
+        RTC.local.getTracks().forEach(function(t) { pc.addTrack(t, RTC.local); });
+
+        // ICE кандидаты → через сервер к собеседнику
+        pc.onicecandidate = function(ev) {
+            if (ev.candidate) wsSend({ type: 'ice', to: remoteName, candidate: ev.candidate });
+        };
+
+        pc.onicegatheringstatechange = function() {
+            console.log('[ICE gather]', pc.iceGatheringState);
+        };
+
+        // Входящие треки от собеседника
+        pc.ontrack = function(ev) {
+            console.log('[ontrack]', ev.track.kind);
+            var stream = (ev.streams && ev.streams[0]) ? ev.streams[0] : new MediaStream([ev.track]);
+
+            if (ev.track.kind === 'audio') {
+                var ael = $('remote-audio');
+                ael.srcObject = stream;
+                // play() может упасть пока нет user gesture; игнорируем — autoplay атрибут помогает
+                ael.play().catch(function() {});
+            }
+
+            if (ev.track.kind === 'video') {
+                var vel = $('remote-vid');
+                vel.srcObject = stream;
+                vel.style.display = 'block';
                 $('call-bg').style.display = 'none';
                 $('call-topbar').style.display = 'flex';
-                v.play().catch(function() {});
+                vel.play().catch(function() {});
             }
         };
 
-        function onConn(s) {
-            if (s === 'connected' || s === 'completed') { setCallSt('СОЕДИНЕНО'); if (!RTC.timer) startTimer(); }
-            if (s === 'failed') { addSys('Связь потеряна');
+        // Следим за состоянием соединения
+        function onState(s) {
+            console.log('[conn state]', s);
+            if (s === 'connected' || s === 'completed') {
+                setCallSt('СОЕДИНЕНО');
+                if (!RTC.timer) startCallTimer();
+            }
+            if (s === 'disconnected') setCallSt('ПЕРЕПОДКЛЮЧЕНИЕ...');
+            if (s === 'failed') { addSys('Звонок прерван: нет связи');
                 rtcClean(); }
         }
-        RTC.pc.onconnectionstatechange = function() { onConn(RTC.pc.connectionState); };
-        RTC.pc.oniceconnectionstatechange = function() { onConn(RTC.pc.iceConnectionState); };
+        pc.onconnectionstatechange = function() { onState(pc.connectionState); };
+        pc.oniceconnectionstatechange = function() { onState(pc.iceConnectionState); };
+
+        return pc;
     }
 
+    // ── Сброс накопленных ICE ──
     async function flushIce() {
-        while (RTC.iceQ.length) { try { await RTC.pc.addIceCandidate(new RTCIceCandidate(RTC.iceQ.shift())); } catch (e) {} }
+        for (var i = 0; i < RTC.iceQ.length; i++) {
+            try { await RTC.pc.addIceCandidate(new RTCIceCandidate(RTC.iceQ[i])); } catch (e) { console.warn('[ice flush]', e); }
+        }
+        RTC.iceQ = [];
     }
 
+    // ══════════════════════════════════════
+    // ── Звонящий ──
+    // ══════════════════════════════════════
     async function startCall(type) {
-        var peer = S.peer;
-        if (!peer) return;
+        if (!S.peer) { alert('Сначала откройте личный чат'); return; }
+        if (RTC.pc) { alert('Звонок уже активен'); return; }
+
         RTC.withVid = (type === 'video');
-        try { RTC.local = await navigator.mediaDevices.getUserMedia({ audio: true, video: RTC.withVid ? { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } : false }); } catch (e) {
-            if (RTC.withVid) { try { RTC.local = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e2) { alert('Нет доступа'); return; }
-                RTC.withVid = false; } else { alert('Нет микрофона'); return; }
+        try {
+            RTC.local = await getMedia(RTC.withVid);
+        } catch (e) {
+            alert(e.message);
+            return;
         }
-        showCallOv(peer);
+        // Если камера недоступна — сбрасываем флаг
+        if (RTC.withVid && RTC.local.getVideoTracks().length === 0) RTC.withVid = false;
+
+        showCallOv(S.peer);
         setCallSt('ПОДГОТОВКА...');
-        if (RTC.withVid) { $('call-pip-vid').srcObject = RTC.local;
-            $('call-pip').style.display = 'block'; }
-        await makePc(peer);
-        var off = await RTC.pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-        await RTC.pc.setLocalDescription(off);
-        wsSend({ type: 'call-offer', to: peer, offer: RTC.pc.localDescription, fromName: S.name, withVideo: RTC.withVid });
+
+        // Показываем своё видео в pip
+        if (RTC.withVid) {
+            $('call-pip-vid').srcObject = RTC.local;
+            $('call-pip-vid').play().catch(function() {});
+            $('call-pip').style.display = 'block';
+        }
+
+        buildPc(S.peer);
+
+        // Offer
+        var offer;
+        try {
+            offer = await RTC.pc.createOffer();
+            await RTC.pc.setLocalDescription(offer);
+        } catch (e) {
+            console.error('[createOffer]', e);
+            alert('Ошибка: ' + e.message);
+            rtcClean();
+            return;
+        }
+
+        wsSend({ type: 'call-offer', to: S.peer, offer: RTC.pc.localDescription, fromName: S.name, withVideo: RTC.withVid });
         setCallSt('ЖДЁМ ОТВЕТА...');
     }
 
+    // ══════════════════════════════════════
+    // ── Входящий звонок (принимающая сторона) ──
+    // ══════════════════════════════════════
     function rtcOffer(m) {
+        // Уже в звонке — отклоняем
+        if (RTC.pc) {
+            wsSend({ type: 'call-decline', to: m.from || m.fromName });
+            return;
+        }
+
         RTC.incOffer = m.offer;
-        RTC.incFrom = m.fromName || m.from;
+        RTC.incFrom = m.from || m.fromName; // сервер добавляет .from
         RTC.incVid = !!m.withVideo;
+
         $('inc-name').textContent = RTC.incFrom;
-        $('inc-label').textContent = RTC.incVid ? '📹 Видеозвонок' : '📞 Голосовой';
-        var av = $('ans-vid-btn');
-        if (av) av.style.display = RTC.incVid ? '' : 'none';
+        $('inc-label').textContent = RTC.incVid ? '📹 Видеозвонок' : '📞 Голосовой звонок';
+        var avb = $('ans-vid-btn');
+        if (avb) avb.style.display = RTC.incVid ? '' : 'none';
         $('incoming').classList.add('active');
+
+        // Звук входящего
         try {
-            var ac = new(window.AudioContext || window.webkitAudioContext)(),
-                osc = ac.createOscillator(),
-                g = ac.createGain();
-            osc.frequency.value = 480;
-            g.gain.value = .06;
-            osc.connect(g);
-            g.connect(ac.destination);
-            osc.start();
-            setTimeout(function() { try { osc.stop();
-                    ac.close(); } catch (e) {} }, 800);
+            var ac = new(window.AudioContext || window.webkitAudioContext)();
+
+            function beep(f, t, d) {
+                var o = ac.createOscillator(),
+                    g = ac.createGain();
+                o.frequency.value = f;
+                g.gain.value = 0.08;
+                o.connect(g);
+                g.connect(ac.destination);
+                o.start(ac.currentTime + t);
+                o.stop(ac.currentTime + t + d);
+            }
+            beep(880, 0, 0.15);
+            beep(880, 0.25, 0.15);
+            beep(1100, 0.5, 0.25);
+            setTimeout(function() { try { ac.close(); } catch (e) {} }, 1200);
         } catch (e) {}
     }
 
+    // ── Ответить на звонок ──
     async function answerCall(withVid) {
         $('incoming').classList.remove('active');
         RTC.withVid = !!withVid && RTC.incVid;
-        try { RTC.local = await navigator.mediaDevices.getUserMedia({ audio: true, video: RTC.withVid ? { width: { ideal: 640 }, height: { ideal: 480 } } : false }); } catch (e) { try { RTC.local = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e2) { alert('Нет доступа'); return; }
-            RTC.withVid = false; }
-        if (RTC.withVid) { $('call-pip-vid').srcObject = RTC.local;
-            $('call-pip').style.display = 'block'; }
+
+        try {
+            RTC.local = await getMedia(RTC.withVid);
+        } catch (e) {
+            alert(e.message);
+            return;
+        }
+        if (RTC.withVid && RTC.local.getVideoTracks().length === 0) RTC.withVid = false;
+
+        if (RTC.withVid) {
+            $('call-pip-vid').srcObject = RTC.local;
+            $('call-pip-vid').play().catch(function() {});
+            $('call-pip').style.display = 'block';
+        }
+
         showCallOv(RTC.incFrom);
         setCallSt('СОЕДИНЯЕМСЯ...');
-        await makePc(RTC.incFrom);
-        await RTC.pc.setRemoteDescription(new RTCSessionDescription(RTC.incOffer));
-        RTC.sdpSet = true;
-        await flushIce();
-        var ans = await RTC.pc.createAnswer();
-        await RTC.pc.setLocalDescription(ans);
-        wsSend({ type: 'call-answer', to: RTC.incFrom, answer: RTC.pc.localDescription, withVideo: RTC.withVid });
+
+        buildPc(RTC.incFrom);
+
+        try {
+            await RTC.pc.setRemoteDescription(new RTCSessionDescription(RTC.incOffer));
+            RTC.sdpSet = true;
+            await flushIce();
+            var answer = await RTC.pc.createAnswer();
+            await RTC.pc.setLocalDescription(answer);
+        } catch (e) {
+            console.error('[answerCall]', e);
+            alert('Ошибка ответа: ' + e.message);
+            rtcClean();
+            return;
+        }
+
+        wsSend({ type: 'call-answer', to: RTC.incFrom, answer: RTC.pc.localDescription });
     }
 
     function declineCall() {
         $('incoming').classList.remove('active');
-        wsSend({ type: 'call-decline', to: RTC.incFrom });
+        if (RTC.incFrom) wsSend({ type: 'call-decline', to: RTC.incFrom });
         RTC.incOffer = null;
         RTC.incFrom = null;
     }
 
+    // ── Обработать answer (сторона звонящего) ──
     async function rtcAnswer(m) {
         if (!RTC.pc) return;
-        await RTC.pc.setRemoteDescription(new RTCSessionDescription(m.answer));
-        RTC.sdpSet = true;
-        await flushIce();
+        try {
+            await RTC.pc.setRemoteDescription(new RTCSessionDescription(m.answer));
+            RTC.sdpSet = true;
+            await flushIce();
+        } catch (e) { console.error('[rtcAnswer]', e); }
     }
 
+    // ── ICE кандидат от собеседника ──
     async function rtcIce(m) {
         if (!RTC.pc || !m.candidate) return;
-        if (RTC.sdpSet) { try { await RTC.pc.addIceCandidate(new RTCIceCandidate(m.candidate)); } catch (e) {} } else RTC.iceQ.push(m.candidate);
+        if (RTC.sdpSet) {
+            try { await RTC.pc.addIceCandidate(new RTCIceCandidate(m.candidate)); } catch (e) { console.warn('[addIce]', e); }
+        } else {
+            RTC.iceQ.push(m.candidate);
+        }
     }
 
-    function endCall() { var p = S.peer || RTC.incFrom; if (p) wsSend({ type: 'call-end', to: p });
-        rtcClean(); }
+    function endCall() {
+        var p = S.peer || RTC.incFrom;
+        if (p) wsSend({ type: 'call-end', to: p });
+        rtcClean();
+    }
 
     function rtcRemEnd() { addSys('Звонок завершён');
         rtcClean(); }
@@ -847,50 +972,70 @@
     function rtcDecline() { setCallSt('ОТКЛОНЕНО');
         setTimeout(rtcClean, 1400); }
 
+    // ── Очистка ──
     function rtcClean() {
         if (RTC.pc) { try { RTC.pc.close(); } catch (e) {}
             RTC.pc = null; }
         if (RTC.local) { RTC.local.getTracks().forEach(function(t) { t.stop(); });
             RTC.local = null; }
+
         $('call-overlay').classList.remove('active');
+
         var rv = $('remote-vid');
-        if (rv) { try { rv.srcObject = null; } catch (e) {}
+        if (rv) { try { rv.pause();
+                rv.srcObject = null; } catch (e) {}
             rv.style.display = 'none'; }
+
+        var pv = $('call-pip-vid');
+        if (pv) { try { pv.pause();
+                pv.srcObject = null; } catch (e) {} }
         $('call-pip').style.display = 'none';
-        try { $('call-pip-vid').srcObject = null; } catch (e) {}
+
         var ra = $('remote-audio');
-        if (ra) { try { ra.srcObject = null; } catch (e) {} }
+        if (ra) { try { ra.pause();
+                ra.srcObject = null; } catch (e) {} }
+
         $('call-bg').style.display = 'flex';
         $('call-topbar').style.display = 'none';
+
         if (RTC.timer) { clearInterval(RTC.timer);
             RTC.timer = null; }
         $('call-tmr').textContent = '';
         $('call-tb-tmr').textContent = '';
+
         RTC.sdpSet = false;
         RTC.iceQ = [];
         RTC.withVid = false;
         RTC.muted = false;
         RTC.vidOff = false;
-        $('cbtn-mic').textContent = '🎤';
-        $('cbtn-mic').classList.remove('off');
-        $('cbtn-cam').textContent = '📹';
-        $('cbtn-cam').classList.remove('off');
+        RTC.incOffer = null;
+        RTC.incFrom = null;
+        RTC.incVid = false;
+
+        var bm = $('cbtn-mic');
+        if (bm) { bm.textContent = '🎤';
+            bm.classList.remove('off'); }
+        var bc = $('cbtn-cam');
+        if (bc) { bc.textContent = '📹';
+            bc.classList.remove('off'); }
     }
 
     function toggleMute() {
         if (!RTC.local) return;
         RTC.muted = !RTC.muted;
         RTC.local.getAudioTracks().forEach(function(t) { t.enabled = !RTC.muted; });
-        $('cbtn-mic').textContent = RTC.muted ? '🔇' : '🎤';
-        $('cbtn-mic').classList.toggle('off', RTC.muted);
+        var b = $('cbtn-mic');
+        b.textContent = RTC.muted ? '🔇' : '🎤';
+        b.classList.toggle('off', RTC.muted);
     }
 
     function toggleVideo() {
         if (!RTC.local) return;
         RTC.vidOff = !RTC.vidOff;
         RTC.local.getVideoTracks().forEach(function(t) { t.enabled = !RTC.vidOff; });
-        $('cbtn-cam').textContent = RTC.vidOff ? '🚫' : '📹';
-        $('cbtn-cam').classList.toggle('off', RTC.vidOff);
+        var b = $('cbtn-cam');
+        b.textContent = RTC.vidOff ? '🚫' : '📹';
+        b.classList.toggle('off', RTC.vidOff);
         $('call-pip').style.display = RTC.vidOff ? 'none' : 'block';
     }
 
@@ -907,9 +1052,13 @@
         $('call-topbar').style.display = 'none';
     }
 
-    function setCallSt(t) { var el = $('call-st'); if (el) el.textContent = t; }
+    function setCallSt(t) {
+        var el = $('call-st');
+        if (el) el.textContent = t;
+        console.log('[call]', t);
+    }
 
-    function startTimer() {
+    function startCallTimer() {
         RTC.t0 = Date.now();
         RTC.timer = setInterval(function() {
             var s = Math.floor((Date.now() - RTC.t0) / 1000),
@@ -918,6 +1067,7 @@
             $('call-tb-tmr').textContent = v;
         }, 1000);
     }
+
 
     // ═══ INIT ═══
     function init() {
