@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>MGV — Диагностика звонков</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0f1a;
+            color: #e2e8f0;
+            padding: 20px;
+            font-size: 13px;
+        }
+        
+        h1 {
+            color: #3b82f6;
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+        
+        .sub {
+            color: #4a5568;
+            font-size: 11px;
+            margin-bottom: 24px;
+        }
+        
+        .section {
+            background: #0d1117;
+            border: 1px solid #1e2d45;
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .section h2 {
+            font-size: 12px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: #4a5568;
+            margin-bottom: 12px;
+        }
+        
+        .btn {
+            background: #3b82f6;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .btn:hover {
+            background: #2563eb;
+        }
+        
+        .btn.red {
+            background: #ef4444;
+        }
+        
+        .btn.green {
+            background: #10b981;
+        }
+        
+        .btn:disabled {
+            opacity: .4;
+            cursor: default;
+        }
+        
+        .log {
+            background: #060a12;
+            border: 1px solid #1e2d45;
+            border-radius: 8px;
+            padding: 12px;
+            min-height: 80px;
+            max-height: 280px;
+            overflow-y: auto;
+            font-size: 12px;
+            line-height: 1.7;
+        }
+        
+        .log .ok {
+            color: #10b981;
+        }
+        
+        .log .err {
+            color: #ef4444;
+        }
+        
+        .log .warn {
+            color: #f59e0b;
+        }
+        
+        .log .info {
+            color: #60a5fa;
+        }
+        
+        .log .dim {
+            color: #4a5568;
+        }
+        
+        .status {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4a5568;
+            margin-right: 6px;
+            vertical-align: middle;
+        }
+        
+        .status.green {
+            background: #10b981;
+            box-shadow: 0 0 6px #10b981;
+        }
+        
+        .status.red {
+            background: #ef4444;
+        }
+        
+        .status.yellow {
+            background: #f59e0b;
+            animation: blink 1s infinite;
+        }
+        
+        @keyframes blink {
+            0%,
+            100% {
+                opacity: 1
+            }
+            50% {
+                opacity: .3
+            }
+        }
+        
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        
+        .label {
+            color: #4a5568;
+            width: 160px;
+            flex-shrink: 0;
+        }
+        
+        .val {
+            color: #e2e8f0;
+            font-weight: 600;
+        }
+        
+        .pair-box {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        
+        .peer-col {
+            flex: 1;
+            min-width: 280px;
+        }
+        
+        .peer-col h3 {
+            font-size: 11px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #3b82f6;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #1e2d45;
+        }
+        
+        video {
+            width: 100%;
+            max-width: 220px;
+            border-radius: 8px;
+            background: #000;
+            border: 1px solid #1e2d45;
+        }
+        
+        .flex {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>MGV — Диагностика звонков</h1>
+    <p class="sub">Эта страница проверяет каждый компонент системы звонков независимо</p>
+
+    <!-- ── 1. Браузер и протокол ── -->
+    <div class="section">
+        <h2>1. Среда</h2>
+        <div class="row"><span class="label">URL протокол</span><span class="val" id="env-proto">—</span></div>
+        <div class="row"><span class="label">getUserMedia</span><span class="val" id="env-gum">—</span></div>
+        <div class="row"><span class="label">RTCPeerConnection</span><span class="val" id="env-rtc">—</span></div>
+        <div class="row"><span class="label">Браузер</span><span class="val" id="env-ua">—</span></div>
+    </div>
+
+    <!-- ── 2. Микрофон/камера ── -->
+    <div class="section">
+        <h2>2. Доступ к медиа</h2>
+        <button class="btn" onclick="testMedia('audio')">🎤 Тест микрофона</button>
+        <button class="btn" onclick="testMedia('video')">📹 Тест камеры</button>
+        <button class="btn red" onclick="stopMedia()">⏹ Стоп</button>
+        <div class="flex" style="margin-top:12px">
+            <video id="local-vid" autoplay muted playsinline></video>
+            <div class="log" id="media-log" style="flex:1;min-width:200px"></div>
+        </div>
+    </div>
+
+    <!-- ── 3. TURN проверка ── -->
+    <div class="section">
+        <h2>3. STUN / TURN серверы</h2>
+        <button class="btn" onclick="testIce()">▶ Проверить ICE серверы</button>
+        <div class="log" id="ice-log" style="margin-top:12px"></div>
+    </div>
+
+    <!-- ── 4. WebSocket сигналинг ── -->
+    <div class="section">
+        <h2>4. WebSocket сигналинг (войди под двумя именами)</h2>
+        <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <input id="ws-name" placeholder="Имя" style="background:#060a12;border:1px solid #1e2d45;color:#e2e8f0;padding:8px 12px;border-radius:8px;font-family:inherit;font-size:13px;width:140px">
+            <input id="ws-pass" placeholder="Пароль" type="password" style="background:#060a12;border:1px solid #1e2d45;color:#e2e8f0;padding:8px 12px;border-radius:8px;font-family:inherit;font-size:13px;width:140px">
+            <button class="btn" onclick="wsConnect()">Подключить</button>
+            <button class="btn red" onclick="wsDisconnect()">Отключить</button>
+        </div>
+        <div class="row"><span class="label">WebSocket статус</span><span class="status" id="ws-dot"></span><span class="val" id="ws-status">не подключён</span></div>
+        <div class="log" id="ws-log" style="margin-top:10px"></div>
+    </div>
+
+    <!-- ── 5. Локальный P2P тест ── -->
+    <div class="section">
+        <h2>5. Локальный P2P тест (два PC в одном браузере)</h2>
+        <button class="btn green" onclick="runLoopback()">▶ Запустить loopback тест</button>
+        <button class="btn red" onclick="stopLoopback()">⏹ Стоп</button>
+        <div class="log" id="loop-log" style="margin-top:12px"></div>
+        <div class="pair-box" style="margin-top:12px">
+            <div class="peer-col">
+                <h3>Caller (A)</h3>
+                <div class="row"><span class="label">ICE state</span><span class="val" id="a-ice">—</span></div>
+                <div class="row"><span class="label">Conn state</span><span class="val" id="a-conn">—</span></div>
+                <div class="row"><span class="label">Tracks sent</span><span class="val" id="a-tracks">—</span></div>
+            </div>
+            <div class="peer-col">
+                <h3>Callee (B)</h3>
+                <div class="row"><span class="label">ICE state</span><span class="val" id="b-ice">—</span></div>
+                <div class="row"><span class="label">Conn state</span><span class="val" id="b-conn">—</span></div>
+                <video id="loop-vid" autoplay playsinline muted style="margin-top:8px"></video>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── helpers ──
+        function log(id, msg, cls) {
+            var el = document.getElementById(id);
+            var d = new Date(),
+                t = d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0') + ':' + d.getSeconds().toString().padStart(2, '0');
+            el.innerHTML += '<div class="' + (cls || 'info') + '">[' + t + '] ' + msg + '</div>';
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function set(id, val, cls) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = val;
+            if (cls) {
+                el.className = 'val';
+                el.style.color = cls === 'ok' ? '#10b981' : cls === 'err' ? '#ef4444' : '#f59e0b';
+            }
+        }
+
+        // ── 1. Env check ──
+        (function() {
+            var proto = location.protocol;
+            set('env-proto', proto, proto === 'https:' ? 'ok' : 'warn');
+            set('env-gum', navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? '✓ Доступен' : '✗ НЕТ', navigator.mediaDevices ? 'ok' : 'err');
+            set('env-rtc', window.RTCPeerConnection ? '✓ Доступен' : '✗ НЕТ', window.RTCPeerConnection ? 'ok' : 'err');
+            var ua = navigator.userAgent;
+            var browser = ua.includes('Chrome') ? 'Chrome' : ua.includes('Firefox') ? 'Firefox' : ua.includes('Safari') ? 'Safari' : 'Other';
+            set('env-ua', browser + ' — ' + ua.slice(0, 80));
+            if (proto !== 'https:' && location.hostname !== 'localhost') {
+                log('media-log', '⚠️ ВНИМАНИЕ: страница открыта по HTTP не на localhost. getUserMedia будет заблокирован браузером!', 'err');
+            }
+        })();
+
+        // ── 2. Media test ──
+        var localStream = null;
+        async function testMedia(type) {
+            try {
+                log('media-log', 'Запрашиваем ' + type + '...', 'info');
+                var constraints = type === 'video' ?
+                    {
+                        audio: true,
+                        video: {
+                            width: 320,
+                            height: 240
+                        }
+                    } :
+                    {
+                        audio: true,
+                        video: false
+                    };
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                log('media-log', '✓ Поток получен. Треков: ' + localStream.getTracks().length, 'ok');
+                localStream.getTracks().forEach(function(t) {
+                    log('media-log', '  → ' + t.kind + ': ' + t.label, 'dim');
+                });
+                if (type === 'video') document.getElementById('local-vid').srcObject = localStream;
+            } catch (e) {
+                log('media-log', '✗ Ошибка: ' + e.name + ': ' + e.message, 'err');
+            }
+        }
+
+        function stopMedia() {
+            if (localStream) {
+                localStream.getTracks().forEach(function(t) {
+                    t.stop();
+                });
+                localStream = null;
+            }
+            document.getElementById('local-vid').srcObject = null;
+            log('media-log', 'Медиа остановлено', 'dim');
+        }
+
+        // ── 3. ICE / TURN test ──
+        var ICE_SERVERS = [{
+            urls: 'stun:stun.l.google.com:19302'
+        }, {
+            urls: 'stun:stun1.l.google.com:19302'
+        }, {
+            urls: 'stun:stun.cloudflare.com:3478'
+        }, {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        }, {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        }, {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        }, {
+            urls: 'turns:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        }];
+
+        async function testIce() {
+            var el = document.getElementById('ice-log');
+            el.innerHTML = '';
+            log('ice-log', 'Создаём RTCPeerConnection с STUN/TURN серверами...', 'info');
+            var pc = new RTCPeerConnection({
+                iceServers: ICE_SERVERS
+            });
+            var found = {
+                stun: false,
+                turn: false,
+                turns: false
+            };
+            var done = false;
+
+            pc.onicecandidate = function(e) {
+                if (!e.candidate) {
+                    if (!done) {
+                        done = true;
+                        log('ice-log', '--- Сбор кандидатов завершён ---', 'dim');
+                        if (found.stun) log('ice-log', '✓ STUN работает (srflx кандидат получен)', 'ok');
+                        else log('ice-log', '✗ STUN не работает — нет srflx кандидатов', 'err');
+                        if (found.turn) log('ice-log', '✓ TURN работает (relay кандидат получен)', 'ok');
+                        else log('ice-log', '✗ TURN недоступен — нет relay кандидатов! Звонки через NAT не работают.', 'err');
+                        if (found.turns) log('ice-log', '✓ TURNS (TLS) работает', 'ok');
+                        pc.close();
+                    }
+                    return;
+                }
+                var c = e.candidate;
+                var type = c.type || (c.candidate.includes('typ relay') ? 'relay' : c.candidate.includes('typ srflx') ? 'srflx' : c.candidate.includes('typ host') ? 'host' : '?');
+                if (!type || type === '?') {
+                    var m = c.candidate.match(/typ (\w+)/);
+                    type = m ? m[1] : '?';
+                }
+                var cls = type === 'relay' ? 'ok' : type === 'srflx' ? 'ok' : 'dim';
+                log('ice-log', 'Кандидат: typ=' + type + ' | ' + c.candidate.slice(0, 80), cls);
+                if (type === 'srflx') found.stun = true;
+                if (type === 'relay' && !c.candidate.includes('turns')) found.turn = true;
+                if (type === 'relay' && c.candidate.includes('turns')) found.turns = true;
+            };
+
+            // Нужен оффер чтобы начать ICE gathering
+            pc.addTransceiver('audio');
+            var offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            setTimeout(function() {
+                if (!done) {
+                    done = true;
+                    log('ice-log', 'Таймаут 10с — итог выше', 'warn');
+                    pc.close();
+                }
+            }, 10000);
+        }
+
+        // ── 4. WebSocket ──
+        var testWs = null;
+
+        function wsConnect() {
+            var name = document.getElementById('ws-name').value.trim();
+            var pass = document.getElementById('ws-pass').value;
+            if (!name || !pass) {
+                log('ws-log', 'Введи имя и пароль', 'warn');
+                return;
+            }
+            var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            var url = proto + '://' + location.host;
+            log('ws-log', 'Подключаемся к ' + url + '...', 'info');
+            testWs = new WebSocket(url);
+            testWs.onopen = function() {
+                document.getElementById('ws-dot').className = 'status yellow';
+                set('ws-status', 'подключён, авторизуемся...');
+                testWs.send(JSON.stringify({
+                    type: 'auth',
+                    name: name,
+                    pass: pass
+                }));
+            };
+            testWs.onmessage = function(e) {
+                var m;
+                try {
+                    m = JSON.parse(e.data);
+                } catch (err) {
+                    return;
+                }
+                if (m.type === 'auth-ok') {
+                    document.getElementById('ws-dot').className = 'status green';
+                    set('ws-status', 'авторизован как ' + m.name, 'ok');
+                    log('ws-log', '✓ Auth OK. Роль: ' + m.role, 'ok');
+                } else if (m.type === 'auth-fail') {
+                    log('ws-log', '✗ Auth fail: ' + m.reason, 'err');
+                } else if (m.type === 'online') {
+                    log('ws-log', 'Онлайн: ' + m.users.join(', '), 'dim');
+                } else if (m.type === 'call-offer') {
+                    log('ws-log', '✓ Получен call-offer от ' + m.from + ' — сигналинг работает!', 'ok');
+                } else {
+                    log('ws-log', 'msg: ' + m.type, 'dim');
+                }
+            };
+            testWs.onclose = function() {
+                document.getElementById('ws-dot').className = 'status red';
+                set('ws-status', 'отключён');
+                log('ws-log', 'WebSocket закрыт', 'warn');
+            };
+            testWs.onerror = function(e) {
+                log('ws-log', '✗ WebSocket ошибка', 'err');
+            };
+        }
+
+        function wsDisconnect() {
+            if (testWs) {
+                testWs.close();
+                testWs = null;
+            }
+        }
+
+        // ── 5. Loopback P2P тест ──
+        var pcA = null,
+            pcB = null,
+            loopStream = null;
+        async function runLoopback() {
+            var llog = document.getElementById('loop-log');
+            llog.innerHTML = '';
+            stopLoopback();
+
+            log('loop-log', 'Получаем медиа...', 'info');
+            try {
+                loopStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: false
+                });
+                log('loop-log', '✓ Медиа получен', 'ok');
+            } catch (e) {
+                log('loop-log', '✗ Нет медиа: ' + e.message + '. Используем синтетический поток.', 'warn');
+                // Синтетический поток через AudioContext
+                var ac = new AudioContext();
+                var osc = ac.createOscillator();
+                var dst = ac.createMediaStreamDestination();
+                osc.connect(dst);
+                osc.start();
+                loopStream = dst.stream;
+            }
+
+            pcA = new RTCPeerConnection({
+                iceServers: ICE_SERVERS
+            });
+            pcB = new RTCPeerConnection({
+                iceServers: ICE_SERVERS
+            });
+
+            loopStream.getTracks().forEach(function(t) {
+                pcA.addTrack(t, loopStream);
+            });
+            set('a-tracks', loopStream.getTracks().length + ' трека');
+
+            // ICE обмен между A и B (локально)
+            pcA.onicecandidate = function(e) {
+                if (e.candidate) {
+                    pcB.addIceCandidate(e.candidate).catch(function(err) {
+                        log('loop-log', 'B addIce: ' + err.message, 'warn');
+                    });
+                }
+            };
+            pcB.onicecandidate = function(e) {
+                if (e.candidate) {
+                    pcA.addIceCandidate(e.candidate).catch(function(err) {
+                        log('loop-log', 'A addIce: ' + err.message, 'warn');
+                    });
+                }
+            };
+
+            pcA.oniceconnectionstatechange = function() {
+                set('a-ice', pcA.iceConnectionState);
+                log('loop-log', 'A ICE → ' + pcA.iceConnectionState, pcA.iceConnectionState === 'connected' || pcA.iceConnectionState === 'completed' ? 'ok' : 'info');
+            };
+            pcB.oniceconnectionstatechange = function() {
+                set('b-ice', pcB.iceConnectionState);
+            };
+            pcA.onconnectionstatechange = function() {
+                set('a-conn', pcA.connectionState);
+                if (pcA.connectionState === 'connected') log('loop-log', '✓✓✓ P2P СОЕДИНЕНО! WebRTC работает корректно.', 'ok');
+                if (pcA.connectionState === 'failed') log('loop-log', '✗ Соединение провалилось', 'err');
+            };
+            pcB.onconnectionstatechange = function() {
+                set('b-conn', pcB.connectionState);
+            };
+
+            pcB.ontrack = function(e) {
+                log('loop-log', '✓ B получил трек: ' + e.track.kind, 'ok');
+                document.getElementById('loop-vid').srcObject = e.streams[0];
+            };
+
+            // Offer/answer
+            log('loop-log', 'A createOffer...', 'info');
+            var offer = await pcA.createOffer();
+            await pcA.setLocalDescription(offer);
+            await pcB.setRemoteDescription(offer);
+
+            log('loop-log', 'B createAnswer...', 'info');
+            var answer = await pcB.createAnswer();
+            await pcB.setLocalDescription(answer);
+            await pcA.setRemoteDescription(answer);
+            log('loop-log', 'SDP обмен завершён, ждём ICE...', 'info');
+        }
+
+        function stopLoopback() {
+            if (pcA) {
+                pcA.close();
+                pcA = null;
+            }
+            if (pcB) {
+                pcB.close();
+                pcB = null;
+            }
+            if (loopStream) {
+                loopStream.getTracks().forEach(function(t) {
+                    t.stop();
+                });
+                loopStream = null;
+            }
+            document.getElementById('loop-vid').srcObject = null;
+        }
+    </script>
+</body>
+
+</html>

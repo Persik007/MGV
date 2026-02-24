@@ -30,6 +30,7 @@
         incOffer: null,
         incFrom: null,
         incVid: false,
+        isCallerSide: false,
         iceQ: [],
         sdpSet: false
     };
@@ -710,19 +711,52 @@
     }
 
 
-    // ═══════════════════════════════════════
-    // WebRTC — ЗВОНКИ
-    // ═══════════════════════════════════════
 
+    // ════════════════════════════════════════════════
+    // WebRTC — ЗВОНКИ
+    // ════════════════════════════════════════════════
+
+    // STUN + TURN серверы.
+    // TURN обязателен для связи через NAT (Railway = публичный интернет).
+    // Используем несколько публичных TURN чтобы хотя бы один сработал.
     var ICE = [
+        // STUN
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
+        // Open Relay (Metered) — бесплатный публичный TURN
+        {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turns:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        // Cloudflare STUN
         { urls: 'stun:stun.cloudflare.com:3478' }
     ];
 
-    // ── Получить медиа-поток ──
+    // Лог в UI (строка статуса звонка) + консоль
+    function callLog(msg) {
+        console.log('[RTC]', msg);
+        var el = $('call-st');
+        if (el) el.textContent = msg.length > 50 ? msg.slice(0, 50) + '…' : msg;
+    }
+
+    // ── Получить медиа ──
     async function getMedia(wantVideo) {
-        // Всегда запрашиваем с echoCancellation и noiseSuppression
         var audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
         var video = wantVideo ?
             { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' } :
@@ -731,10 +765,9 @@
             return await navigator.mediaDevices.getUserMedia({ audio: audio, video: video });
         } catch (e) {
             if (wantVideo) {
-                // Камера недоступна — пробуем только аудио
-                try { return await navigator.mediaDevices.getUserMedia({ audio: audio }); } catch (e2) { throw new Error('Нет доступа к микрофону: ' + e2.message); }
+                try { return await navigator.mediaDevices.getUserMedia({ audio: audio }); } catch (e2) { throw new Error('Нет микрофона: ' + e2.message); }
             }
-            throw new Error('Нет доступа к микрофону: ' + e.message);
+            throw new Error('Нет микрофона: ' + e.message);
         }
     }
 
@@ -745,33 +778,34 @@
         RTC.sdpSet = false;
         RTC.iceQ = [];
 
-        var pc = new RTCPeerConnection({ iceServers: ICE, iceCandidatePoolSize: 4 });
+        var pc = new RTCPeerConnection({ iceServers: ICE, iceCandidatePoolSize: 6 });
         RTC.pc = pc;
 
         // Добавляем локальные треки
         RTC.local.getTracks().forEach(function(t) { pc.addTrack(t, RTC.local); });
 
-        // ICE кандидаты → через сервер к собеседнику
+        // Отправляем ICE кандидатов собеседнику через WS
         pc.onicecandidate = function(ev) {
-            if (ev.candidate) wsSend({ type: 'ice', to: remoteName, candidate: ev.candidate });
+            if (ev.candidate) {
+                wsSend({ type: 'ice', to: remoteName, candidate: ev.candidate });
+            } else {
+                callLog('ICE сбор завершён');
+            }
         };
 
         pc.onicegatheringstatechange = function() {
-            console.log('[ICE gather]', pc.iceGatheringState);
+            callLog('ICE сбор: ' + pc.iceGatheringState);
         };
 
         // Входящие треки от собеседника
         pc.ontrack = function(ev) {
-            console.log('[ontrack]', ev.track.kind);
+            callLog('Трек: ' + ev.track.kind);
             var stream = (ev.streams && ev.streams[0]) ? ev.streams[0] : new MediaStream([ev.track]);
-
             if (ev.track.kind === 'audio') {
                 var ael = $('remote-audio');
                 ael.srcObject = stream;
-                // play() может упасть пока нет user gesture; игнорируем — autoplay атрибут помогает
                 ael.play().catch(function() {});
             }
-
             if (ev.track.kind === 'video') {
                 var vel = $('remote-vid');
                 vel.srcObject = stream;
@@ -782,52 +816,58 @@
             }
         };
 
-        // Следим за состоянием соединения
-        function onState(s) {
-            console.log('[conn state]', s);
+        // Состояние ICE — главный индикатор
+        pc.oniceconnectionstatechange = function() {
+            var s = pc.iceConnectionState;
+            callLog('ICE: ' + s);
             if (s === 'connected' || s === 'completed') {
-                setCallSt('СОЕДИНЕНО');
+                setCallSt('СОЕДИНЕНО ✓');
                 if (!RTC.timer) startCallTimer();
             }
             if (s === 'disconnected') setCallSt('ПЕРЕПОДКЛЮЧЕНИЕ...');
-            if (s === 'failed') { addSys('Звонок прерван: нет связи');
+            if (s === 'failed') {
+                setCallSt('НЕТ СВЯЗИ ✗');
+                // ICE restart если мы инициатор
+                if (RTC.pc && RTC.isCallerSide) {
+                    callLog('ICE restart...');
+                    RTC.pc.restartIce();
+                } else {
+                    setTimeout(function() { addSys('Звонок: нет связи');
+                        rtcClean(); }, 2000);
+                }
+            }
+        };
+
+        pc.onconnectionstatechange = function() {
+            callLog('Conn: ' + pc.connectionState);
+            if (pc.connectionState === 'failed') { addSys('Соединение прервано');
                 rtcClean(); }
-        }
-        pc.onconnectionstatechange = function() { onState(pc.connectionState); };
-        pc.oniceconnectionstatechange = function() { onState(pc.iceConnectionState); };
+        };
 
         return pc;
     }
 
-    // ── Сброс накопленных ICE ──
     async function flushIce() {
         for (var i = 0; i < RTC.iceQ.length; i++) {
-            try { await RTC.pc.addIceCandidate(new RTCIceCandidate(RTC.iceQ[i])); } catch (e) { console.warn('[ice flush]', e); }
+            try { await RTC.pc.addIceCandidate(new RTCIceCandidate(RTC.iceQ[i])); } catch (e) { console.warn('[ice flush]', e.message); }
         }
         RTC.iceQ = [];
     }
 
-    // ══════════════════════════════════════
     // ── Звонящий ──
-    // ══════════════════════════════════════
     async function startCall(type) {
         if (!S.peer) { alert('Сначала откройте личный чат'); return; }
         if (RTC.pc) { alert('Звонок уже активен'); return; }
 
         RTC.withVid = (type === 'video');
-        try {
-            RTC.local = await getMedia(RTC.withVid);
-        } catch (e) {
-            alert(e.message);
-            return;
-        }
-        // Если камера недоступна — сбрасываем флаг
+        RTC.isCallerSide = true;
+
+        try { RTC.local = await getMedia(RTC.withVid); } catch (e) { alert(e.message); return; }
         if (RTC.withVid && RTC.local.getVideoTracks().length === 0) RTC.withVid = false;
 
         showCallOv(S.peer);
         setCallSt('ПОДГОТОВКА...');
 
-        // Показываем своё видео в pip
         if (RTC.withVid) {
             $('call-pip-vid').srcObject = RTC.local;
             $('call-pip-vid').play().catch(function() {});
@@ -836,35 +876,30 @@
 
         buildPc(S.peer);
 
-        // Offer
-        var offer;
         try {
-            offer = await RTC.pc.createOffer();
+            var offer = await RTC.pc.createOffer();
             await RTC.pc.setLocalDescription(offer);
-        } catch (e) {
-            console.error('[createOffer]', e);
-            alert('Ошибка: ' + e.message);
-            rtcClean();
-            return;
-        }
+        } catch (e) { alert('Ошибка offer: ' + e.message);
+            rtcClean(); return; }
 
-        wsSend({ type: 'call-offer', to: S.peer, offer: RTC.pc.localDescription, fromName: S.name, withVideo: RTC.withVid });
+        wsSend({
+            type: 'call-offer',
+            to: S.peer,
+            offer: RTC.pc.localDescription,
+            fromName: S.name,
+            withVideo: RTC.withVid
+        });
         setCallSt('ЖДЁМ ОТВЕТА...');
     }
 
-    // ══════════════════════════════════════
-    // ── Входящий звонок (принимающая сторона) ──
-    // ══════════════════════════════════════
+    // ── Входящий звонок ──
     function rtcOffer(m) {
-        // Уже в звонке — отклоняем
-        if (RTC.pc) {
-            wsSend({ type: 'call-decline', to: m.from || m.fromName });
-            return;
-        }
+        if (RTC.pc) { wsSend({ type: 'call-decline', to: m.from }); return; }
 
         RTC.incOffer = m.offer;
-        RTC.incFrom = m.from || m.fromName; // сервер добавляет .from
+        RTC.incFrom = m.from;
         RTC.incVid = !!m.withVideo;
+        RTC.isCallerSide = false;
 
         $('inc-name').textContent = RTC.incFrom;
         $('inc-label').textContent = RTC.incVid ? '📹 Видеозвонок' : '📞 Голосовой звонок';
@@ -872,38 +907,29 @@
         if (avb) avb.style.display = RTC.incVid ? '' : 'none';
         $('incoming').classList.add('active');
 
-        // Звук входящего
+        // Звук
         try {
             var ac = new(window.AudioContext || window.webkitAudioContext)();
-
-            function beep(f, t, d) {
+            [0, 0.3, 0.6].forEach(function(t) {
                 var o = ac.createOscillator(),
                     g = ac.createGain();
-                o.frequency.value = f;
-                g.gain.value = 0.08;
+                o.frequency.value = 880;
+                g.gain.value = 0.07;
                 o.connect(g);
                 g.connect(ac.destination);
                 o.start(ac.currentTime + t);
-                o.stop(ac.currentTime + t + d);
-            }
-            beep(880, 0, 0.15);
-            beep(880, 0.25, 0.15);
-            beep(1100, 0.5, 0.25);
-            setTimeout(function() { try { ac.close(); } catch (e) {} }, 1200);
+                o.stop(ac.currentTime + t + 0.18);
+            });
+            setTimeout(function() { try { ac.close(); } catch (e) {} }, 1500);
         } catch (e) {}
     }
 
-    // ── Ответить на звонок ──
+    // ── Ответить ──
     async function answerCall(withVid) {
         $('incoming').classList.remove('active');
         RTC.withVid = !!withVid && RTC.incVid;
 
-        try {
-            RTC.local = await getMedia(RTC.withVid);
-        } catch (e) {
-            alert(e.message);
-            return;
-        }
+        try { RTC.local = await getMedia(RTC.withVid); } catch (e) { alert(e.message); return; }
         if (RTC.withVid && RTC.local.getVideoTracks().length === 0) RTC.withVid = false;
 
         if (RTC.withVid) {
@@ -914,7 +940,6 @@
 
         showCallOv(RTC.incFrom);
         setCallSt('СОЕДИНЯЕМСЯ...');
-
         buildPc(RTC.incFrom);
 
         try {
@@ -923,12 +948,8 @@
             await flushIce();
             var answer = await RTC.pc.createAnswer();
             await RTC.pc.setLocalDescription(answer);
-        } catch (e) {
-            console.error('[answerCall]', e);
-            alert('Ошибка ответа: ' + e.message);
-            rtcClean();
-            return;
-        }
+        } catch (e) { alert('Ошибка ответа: ' + e.message);
+            rtcClean(); return; }
 
         wsSend({ type: 'call-answer', to: RTC.incFrom, answer: RTC.pc.localDescription });
     }
@@ -940,7 +961,6 @@
         RTC.incFrom = null;
     }
 
-    // ── Обработать answer (сторона звонящего) ──
     async function rtcAnswer(m) {
         if (!RTC.pc) return;
         try {
@@ -950,11 +970,10 @@
         } catch (e) { console.error('[rtcAnswer]', e); }
     }
 
-    // ── ICE кандидат от собеседника ──
     async function rtcIce(m) {
         if (!RTC.pc || !m.candidate) return;
         if (RTC.sdpSet) {
-            try { await RTC.pc.addIceCandidate(new RTCIceCandidate(m.candidate)); } catch (e) { console.warn('[addIce]', e); }
+            try { await RTC.pc.addIceCandidate(new RTCIceCandidate(m.candidate)); } catch (e) { console.warn('[addIce]', e.message); }
         } else {
             RTC.iceQ.push(m.candidate);
         }
@@ -972,7 +991,6 @@
     function rtcDecline() { setCallSt('ОТКЛОНЕНО');
         setTimeout(rtcClean, 1400); }
 
-    // ── Очистка ──
     function rtcClean() {
         if (RTC.pc) { try { RTC.pc.close(); } catch (e) {}
             RTC.pc = null; }
@@ -985,12 +1003,10 @@
         if (rv) { try { rv.pause();
                 rv.srcObject = null; } catch (e) {}
             rv.style.display = 'none'; }
-
         var pv = $('call-pip-vid');
         if (pv) { try { pv.pause();
                 pv.srcObject = null; } catch (e) {} }
         $('call-pip').style.display = 'none';
-
         var ra = $('remote-audio');
         if (ra) { try { ra.pause();
                 ra.srcObject = null; } catch (e) {} }
@@ -1011,6 +1027,7 @@
         RTC.incOffer = null;
         RTC.incFrom = null;
         RTC.incVid = false;
+        RTC.isCallerSide = false;
 
         var bm = $('cbtn-mic');
         if (bm) { bm.textContent = '🎤';
@@ -1067,7 +1084,6 @@
             $('call-tb-tmr').textContent = v;
         }, 1000);
     }
-
 
     // ═══ INIT ═══
     function init() {
