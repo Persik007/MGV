@@ -380,7 +380,12 @@
         rb += '</div>';
         body += rb;
 
-        row.innerHTML = (own ? '' : av) + '<div class="msg-body">' + body + react + '</div>' + (own ? av : '');
+        // React btn goes between avatar and body, outside msg-body
+        if (own) {
+            row.innerHTML = '<div class="msg-body">' + body + '</div>' + react + av;
+        } else {
+            row.innerHTML = av + react + '<div class="msg-body">' + body + '</div>';
+        }
         c.appendChild(row);
         if (m.msgType === 'voice') setTimeout(function() { drawWave('vc_' + m.id, m.file && m.file.peaks); }, 80);
     }
