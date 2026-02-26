@@ -147,6 +147,9 @@
             case 'call-decline':
                 rtcDecline();
                 break;
+            case 'reaction-update':
+                onReactionUpdate(m);
+                break;
         }
     }
 
@@ -331,9 +334,16 @@
         var row = document.createElement('div');
         row.className = 'msg-row ' + (own ? 'own' : 'other');
         row.dataset.mid = m.id;
+        row.addEventListener('mousedown', function(e) { msgLongPressStart(e, m.id); });
+        row.addEventListener('touchstart', function(e) { msgLongPressStart(e, m.id); }, { passive: true });
+        row.addEventListener('mouseup', msgLongPressEnd);
+        row.addEventListener('touchend', msgLongPressEnd);
+        row.addEventListener('mouseleave', msgLongPressEnd);
+
         var col = gc(m.from);
         var av = '<div class="msg-avatar" style="background:' + col + '22;color:' + col + '">' + ini(m.from) + '</div>';
         var del = '<button class="msg-del" onclick="MGV.delMsg(\'' + m.id + '\')">✕</button>';
+        var react = '<button class="msg-react-btn" onclick="event.stopPropagation();showEmojiPicker(\'' + m.id + '\',this)" title="Реакция">😊</button>';
         var body = '';
         if (!own) body += '<div class="msg-meta"><span class="msg-author">' + esc(m.from) + '</span></div>';
 
@@ -356,11 +366,24 @@
             body += '<div class="msg-bubble">' + del + esc(m.text || '').replace(/\n/g, '<br>') + '</div>';
         }
         body += '<div class="msg-time">' + fmtT(m.time) + '</div>';
-        row.innerHTML = (own ? '' : av) + '<div class="msg-body">' + body + '</div>' + (own ? av : '');
+
+        // Reactions (from history)
+        var rb = '<div class="reactions-bar">';
+        if (m.reactions) {
+            Object.keys(m.reactions).forEach(function(em) {
+                var us = m.reactions[em];
+                if (!us || !us.length) return;
+                var mine = us.indexOf(S.name) !== -1;
+                rb += '<button class="reaction-chip' + (mine ? ' mine' : '') + '" title="' + esc(us.join(', ')) + '" onclick="event.stopPropagation();addReaction(\'' + m.id + '\',\'' + em + '\')"><span class="rc-em">' + em + '</span><span class="rc-n">' + us.length + '</span></button>';
+            });
+        }
+        rb += '</div>';
+        body += rb;
+
+        row.innerHTML = (own ? '' : av) + '<div class="msg-body">' + body + react + '</div>' + (own ? av : '');
         c.appendChild(row);
         if (m.msgType === 'voice') setTimeout(function() { drawWave('vc_' + m.id, m.file && m.file.peaks); }, 80);
     }
-
     // ─── Telegram-style voice pill ───
     function buildVoice(m, del) {
         var uid = 'vc_' + m.id,
@@ -456,25 +479,71 @@
         if (VP.el.duration) VP.el.currentTime = VP.el.duration * pct;
     }
 
-    // ─── Circle ───
+    // ─── Circle (Telegram-style кружок с кольцом) ───
     function buildCircle(m, del) {
         var cid = 'ci_' + m.id;
-        return '<div class="circle-wrap" id="' + cid + '" onclick="MGV.circPlay(\'' + cid + '\')">' +
-            '<video class="circle-vid" src="' + esc(m.file.url) + '" loop playsinline preload="metadata"></video>' +
-            '<div class="circle-ov">▶</div>' +
-            '<span class="circle-dur">' + fmtD(m.file && m.file.duration) + '</span>' +
+        var dur = +(m.file && m.file.duration) || 0;
+        var r = 94,
+            circ = Math.round(2 * Math.PI * r);
+        return '<div class="circle-wrap" id="' + cid + '">' +
+            '<svg class="circle-ring-svg" viewBox="0 0 200 200">' +
+            '<circle class="cr-track" cx="100" cy="100" r="' + r + '"/>' +
+            '<circle class="cr-prog" id="' + cid + '_ring" cx="100" cy="100" r="' + r + '"' +
+            ' stroke-dasharray="' + circ + '" stroke-dashoffset="' + circ + '"/>' +
+            '</svg>' +
+            '<video class="circle-vid" id="' + cid + '_v" src="' + esc(m.file.url) + '" playsinline preload="metadata"></video>' +
+            '<div class="circle-ov" id="' + cid + '_ov" onclick="MGV.circPlay(\'' + cid + '\')">' +
+            '<div class="circle-play-icon">&#9654;</div>' +
+            '</div>' +
+            '<span class="circle-dur" id="' + cid + '_dur">' + fmtD(dur) + '</span>' +
             del + '</div>';
     }
 
-    function circPlay(wid) {
-        var w = $(wid);
+    function circPlay(cid) {
+        var w = $(cid);
         if (!w) return;
-        var v = w.querySelector('video'),
-            ov = w.querySelector('.circle-ov');
+        var v = $(cid + '_v'),
+            ov = $(cid + '_ov'),
+            ring = $(cid + '_ring'),
+            durEl = $(cid + '_dur');
         if (!v) return;
-        if (v.paused) { v.play().catch(function() {}); if (ov) ov.style.opacity = '0';
-            v.onended = function() { if (ov) ov.style.opacity = '1'; }; } else { v.pause();
-            v.currentTime = 0; if (ov) ov.style.opacity = '1'; }
+        if (v.paused) {
+            document.querySelectorAll('.circle-wrap video').forEach(function(vid) {
+                if (vid !== v && !vid.paused) {
+                    vid.pause();
+                    vid.currentTime = 0;
+                    var pid = vid.id.replace('_v', '');
+                    var oov = $(pid + '_ov'),
+                        oring = $(pid + '_ring'),
+                        odur = $(pid + '_dur');
+                    if (oov) oov.style.opacity = '1';
+                    if (oring) oring.style.strokeDashoffset = oring.getAttribute('stroke-dasharray');
+                    if (odur && vid.duration) odur.textContent = fmtD(vid.duration);
+                }
+            });
+            v.play().catch(function() {});
+            if (ov) ov.style.opacity = '0';
+            var circ = +(ring && ring.getAttribute('stroke-dasharray')) || 591;
+            v.ontimeupdate = function() {
+                if (!v.duration) return;
+                var pct = v.currentTime / v.duration;
+                if (ring) ring.style.strokeDashoffset = circ * (1 - pct);
+                if (durEl) durEl.textContent = fmtD(v.currentTime);
+            };
+            v.onended = function() {
+                if (ov) ov.style.opacity = '1';
+                if (ring) ring.style.strokeDashoffset = circ;
+                if (durEl) durEl.textContent = fmtD(v.duration || 0);
+                v.currentTime = 0;
+            };
+        } else {
+            v.pause();
+            v.currentTime = 0;
+            if (ov) ov.style.opacity = '1';
+            var circ2 = +(ring && ring.getAttribute('stroke-dasharray')) || 591;
+            if (ring) ring.style.strokeDashoffset = circ2;
+            if (durEl) durEl.textContent = fmtD(v.duration || 0);
+        }
     }
 
     function addSys(t) {
@@ -716,37 +785,23 @@
     // WebRTC — ЗВОНКИ
     // ════════════════════════════════════════════════
 
-    // STUN + TURN серверы.
-    // TURN обязателен для связи через NAT (Railway = публичный интернет).
-    // Используем несколько публичных TURN чтобы хотя бы один сработал.
-    var ICE = [
-        // STUN
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        // Open Relay (Metered) — бесплатный публичный TURN
-        {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turns:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        // Cloudflare STUN
-        { urls: 'stun:stun.cloudflare.com:3478' }
-    ];
+    // ICE серверы загружаем с сервера (/api/ice) — там могут быть TURN из env Railway
+    var ICE_CACHE = null;
+    async function getIceServers() {
+        if (ICE_CACHE) return ICE_CACHE;
+        try {
+            var r = await fetch('/api/ice');
+            ICE_CACHE = await r.json();
+            console.log('[ICE] Загружено серверов:', ICE_CACHE.length);
+            return ICE_CACHE;
+        } catch (e) {
+            console.warn('[ICE] Не удалось загрузить, используем fallback STUN');
+            return [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ];
+        }
+    }
 
     // Лог в UI (строка статуса звонка) + консоль
     function callLog(msg) {
@@ -772,13 +827,13 @@
     }
 
     // ── Создать PeerConnection ──
-    function buildPc(remoteName) {
+    function buildPc(remoteName, iceServers) {
         if (RTC.pc) { try { RTC.pc.close(); } catch (e) {}
             RTC.pc = null; }
         RTC.sdpSet = false;
         RTC.iceQ = [];
 
-        var pc = new RTCPeerConnection({ iceServers: ICE, iceCandidatePoolSize: 6 });
+        var pc = new RTCPeerConnection({ iceServers: iceServers, iceCandidatePoolSize: 6 });
         RTC.pc = pc;
 
         // Добавляем локальные треки
@@ -874,7 +929,7 @@
             $('call-pip').style.display = 'block';
         }
 
-        buildPc(S.peer);
+        buildPc(S.peer, await getIceServers());
 
         try {
             var offer = await RTC.pc.createOffer();
@@ -940,7 +995,7 @@
 
         showCallOv(RTC.incFrom);
         setCallSt('СОЕДИНЯЕМСЯ...');
-        buildPc(RTC.incFrom);
+        buildPc(RTC.incFrom, await getIceServers());
 
         try {
             await RTC.pc.setRemoteDescription(new RTCSessionDescription(RTC.incOffer));
@@ -1085,6 +1140,132 @@
         }, 1000);
     }
 
+
+    // ════════════════════════════════════════════
+    // EMOJI PICKER + РЕАКЦИИ + EMOJI INPUT
+    // ════════════════════════════════════════════
+
+    var EMOJI_QUICK = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉', '😍', '🤔', '💯', '✅', '😡', '🥹', '🫡', '💀', '🙏', '⚡'];
+    var EMOJI_ALL = ['😀', '😁', '😂', '🤣', '😄', '😅', '😆', '😇', '😉', '😊', '😋', '😌', '😍', '🥰', '😎', '😏', '😐', '😑', '😒', '😓', '😔', '😕', '😖', '😗', '😘', '😙', '😚', '😛', '😜', '😝', '😞', '😟', '😠', '😡', '😢', '😣', '😤', '😥', '😦', '😧', '😨', '😩', '😪', '😫', '😬', '😭', '😮', '😯', '😰', '😱', '😲', '😳', '😴', '😵', '🤐', '🤑', '🤒', '🤓', '🤔', '🤕', '🤗', '🤠', '🤡', '🤢', '🤣', '🤤', '🤥', '🤧', '🤨', '🤩', '🤪', '🤫', '🤬', '🤭', '🤯', '🤮', '🥱', '🥲', '🥳', '🥴', '🥵', '🥶', '🥸', '🥹', '🫠', '🫡', '🫢', '🫤', '🫥',
+        '👋', '🤚', '✋', '👌', '✌️', '🤞', '👍', '👎', '✊', '👊', '👏', '🙌', '🤝', '🙏', '💪',
+        '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '❤️‍🔥',
+        '🌸', '🌺', '🌻', '🌹', '🌷', '🌼', '💐', '🍀', '🌿', '🍃', '🌱', '🎄', '🌲', '🌳', '🌴', '🌵', '🍄', '🌊', '💧', '🔥', '⭐', '🌟', '✨', '💫', '⚡', '🌈', '☀️', '☁️', '🌧', '❄️', '🌙',
+        '🎂', '🍰', '🧁', '🍭', '🍫', '🍩', '🍪', '🍦', '☕', '🍵', '🧋', '🎮', '🎲', '🎯', '🎨', '🎵', '🎶', '🎸', '🏆', '🎉', '🎊', '🎁', '👑', '💎', '🔮'
+    ];
+
+    var lpTimer = null;
+    var eiOpen = false;
+
+    // Floating emoji picker для реакций
+    function showEmojiPicker(msgId, anchor) {
+        closeEmojiPicker();
+        var picker = document.createElement('div');
+        picker.id = 'emoji-picker';
+        picker.className = 'emoji-picker';
+        EMOJI_QUICK.forEach(function(em) {
+            var b = document.createElement('button');
+            b.className = 'ep-btn';
+            b.textContent = em;
+            b.onclick = function(e) { e.stopPropagation();
+                addReaction(msgId, em);
+                closeEmojiPicker(); };
+            picker.appendChild(b);
+        });
+        document.body.appendChild(picker);
+        var r = anchor.getBoundingClientRect();
+        var pw = picker.offsetWidth || 292;
+        var ph = picker.offsetHeight || 56;
+        var left = Math.max(6, Math.min(r.left, window.innerWidth - pw - 6));
+        var top = r.top - ph - 10;
+        if (top < 6) top = r.bottom + 8;
+        picker.style.left = left + 'px';
+        picker.style.top = top + 'px';
+        requestAnimationFrame(function() { picker.classList.add('visible'); });
+    }
+
+    function closeEmojiPicker() {
+        var p = document.getElementById('emoji-picker');
+        if (p) p.remove();
+    }
+    document.addEventListener('click', function(e) {
+        var p = document.getElementById('emoji-picker');
+        if (p && !p.contains(e.target)) closeEmojiPicker();
+    });
+
+    function addReaction(msgId, emoji) {
+        wsSend({ type: 'reaction', room: S.room, msgId: msgId, emoji: emoji });
+    }
+
+    function onReactionUpdate(m) {
+        if (m.room !== S.room) return;
+        var row = document.querySelector('[data-mid="' + m.msgId + '"]');
+        if (!row) return;
+        var body = row.querySelector('.msg-body');
+        if (!body) return;
+        var rb = body.querySelector('.reactions-bar');
+        if (!rb) { rb = document.createElement('div');
+            rb.className = 'reactions-bar';
+            body.appendChild(rb); }
+        rb.innerHTML = '';
+        if (!m.reactions) return;
+        Object.keys(m.reactions).forEach(function(em) {
+            var us = m.reactions[em];
+            if (!us || !us.length) return;
+            var mine = us.indexOf(S.name) !== -1;
+            var chip = document.createElement('button');
+            chip.className = 'reaction-chip' + (mine ? ' mine' : '');
+            chip.title = us.join(', ');
+            chip.innerHTML = '<span class="rc-em">' + em + '</span><span class="rc-n">' + us.length + '</span>';
+            chip.onclick = function(e) { e.stopPropagation();
+                addReaction(m.msgId, em); };
+            rb.appendChild(chip);
+        });
+    }
+
+    function msgLongPressStart(e, msgId) {
+        clearTimeout(lpTimer);
+        lpTimer = setTimeout(function() {
+            var row = document.querySelector('[data-mid="' + msgId + '"]');
+            if (row) showEmojiPicker(msgId, row);
+        }, 480);
+    }
+
+    function msgLongPressEnd() { clearTimeout(lpTimer); }
+
+    // Emoji panel в инпуте
+    function toggleEmojiInput(e) {
+        if (e) e.stopPropagation();
+        eiOpen = !eiOpen;
+        var panel = document.getElementById('emoji-input-panel');
+        if (!panel) return;
+        if (eiOpen) {
+            if (!panel.childElementCount) {
+                EMOJI_QUICK.concat(EMOJI_ALL).forEach(function(em) {
+                    var b = document.createElement('button');
+                    b.className = 'ep-btn';
+                    b.textContent = em;
+                    b.onclick = function() {
+                        var inp = document.getElementById('msg-input');
+                        if (!inp) return;
+                        var s = inp.selectionStart || inp.value.length;
+                        inp.value = inp.value.slice(0, s) + em + inp.value.slice(s);
+                        inp.selectionStart = inp.selectionEnd = s + em.length;
+                        inp.dispatchEvent(new Event('input', { bubbles: true }));
+                        inp.focus();
+                    };
+                    panel.appendChild(b);
+                });
+            }
+            panel.classList.add('open');
+            var eb = document.getElementById('btn-emoji');
+            if (eb) eb.style.color = 'var(--accent)';
+        } else {
+            panel.classList.remove('open');
+            var eb = document.getElementById('btn-emoji');
+            if (eb) eb.style.color = '';
+        }
+    }
+
     // ═══ INIT ═══
     function init() {
         $('l-name').addEventListener('keydown', function(e) { if (e.key === 'Enter') $('l-pass').focus(); });
@@ -1139,6 +1320,8 @@
         openRoom,
         switchTab,
         goBack,
+        addReaction,
+        toggleEmojiInput,
         attachFile: function() { $('file-input').click(); }
     };
 

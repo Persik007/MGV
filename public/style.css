@@ -1828,3 +1828,296 @@ audio {
         min-width: 0;
     }
 }
+
+
+/* ══════════════════════════════════════════
+   REACTIONS & EMOJI PICKER
+══════════════════════════════════════════ */
+
+
+/* Emoji picker floating */
+
+.emoji-picker {
+    position: fixed;
+    z-index: 9000;
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 16px;
+    padding: 8px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    max-width: 268px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .3);
+    opacity: 0;
+    transform: scale(.88) translateY(6px);
+    transition: opacity .15s ease, transform .15s ease;
+    pointer-events: none;
+}
+
+.emoji-picker.visible {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    pointer-events: all;
+}
+
+.ep-btn {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .1s, transform .1s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.ep-btn:hover {
+    background: var(--bg4);
+    transform: scale(1.2);
+}
+
+.ep-btn:active {
+    transform: scale(.95);
+}
+
+
+/* React button on hover (desktop) */
+
+.msg-react-btn {
+    position: absolute;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity .15s, transform .15s;
+    pointer-events: none;
+    z-index: 10;
+    top: 4px;
+}
+
+.msg-row.own .msg-react-btn {
+    left: -34px;
+}
+
+.msg-row.other .msg-react-btn {
+    right: -34px;
+}
+
+.msg-row:hover .msg-react-btn {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.msg-react-btn:hover {
+    transform: scale(1.15);
+    background: var(--bg4);
+}
+
+
+/* Reactions bar */
+
+.reactions-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 5px;
+    min-height: 0;
+}
+
+.reaction-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg4);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3px 8px 3px 6px;
+    cursor: pointer;
+    transition: background .1s, border-color .1s, transform .1s;
+    -webkit-tap-highlight-color: transparent;
+    animation: popIn .2s cubic-bezier(.34, 1.56, .64, 1);
+}
+
+.reaction-chip.mine {
+    background: rgba(59, 130, 246, .18);
+    border-color: rgba(59, 130, 246, .5);
+}
+
+.reaction-chip:hover {
+    background: var(--bg3);
+    transform: scale(1.06);
+}
+
+.reaction-chip:active {
+    transform: scale(.95);
+}
+
+.rc-em {
+    font-size: 15px;
+    line-height: 1;
+}
+
+.rc-n {
+    font-size: 11px;
+    color: var(--text2);
+    font-weight: 600;
+    min-width: 8px;
+}
+
+.reaction-chip.mine .rc-n {
+    color: var(--accent-g);
+}
+
+@keyframes popIn {
+    from {
+        transform: scale(0);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+
+/* Emoji input panel */
+
+.emoji-input-panel {
+    display: none;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 8px 4px 6px;
+    max-height: 120px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+    animation: slideDown .15s ease;
+}
+
+.emoji-input-panel.open {
+    display: flex;
+}
+
+.emoji-input-panel .ep-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+
+/* ── Mobile: bigger react button always visible on touch ── */
+
+@media (max-width: 700px) {
+    .msg-react-btn {
+        opacity: 0;
+    }
+    .msg-row:active .msg-react-btn {
+        opacity: 1;
+        pointer-events: all;
+    }
+}
+
+
+/* ── Telegram-style кружок ── */
+
+.circle-wrap {
+    position: relative;
+    display: inline-block;
+    width: 200px;
+    height: 200px;
+    cursor: pointer;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.circle-ring-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+    pointer-events: none;
+}
+
+.cr-track {
+    fill: none;
+    stroke: rgba(59, 130, 246, .15);
+    stroke-width: 4;
+}
+
+.cr-prog {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 4;
+    stroke-linecap: round;
+    transition: stroke-dashoffset .25s linear;
+}
+
+.circle-vid {
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    width: calc(100% - 14px);
+    height: calc(100% - 14px);
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+}
+
+.circle-ov {
+    position: absolute;
+    top: 7px;
+    left: 7px;
+    width: calc(100% - 14px);
+    height: calc(100% - 14px);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, .38);
+    transition: opacity .2s;
+    cursor: pointer;
+}
+
+.circle-play-icon {
+    font-size: 36px;
+    color: #fff;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, .4);
+    margin-left: 4px;
+}
+
+.circle-dur {
+    position: absolute;
+    bottom: 13px;
+    right: 13px;
+    background: rgba(0, 0, 0, .65);
+    color: #fff;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 8px;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+}
