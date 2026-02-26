@@ -199,42 +199,65 @@ function handle(req, res, sessions) {
 }
 
 // ── ICE / TURN credentials ──
-// Кеш — обновляем раз в 12 часов (Metered credentials живут 24ч)
+// Если задана env METERED_CREDS_URL — загружаем с неё (приоритет).
+// Иначе — встроенный список надёжных TURN серверов.
+
 var iceCache = null;
 var iceCacheTime = 0;
-var ICE_TTL = 12 * 60 * 60 * 1000;
+var ICE_TTL = 8 * 60 * 60 * 1000; // 8 часов
 
-var METERED_URL = process.env.METERED_CREDS_URL || 'https://mgv.metered.live/api/v1/turn/credentials?apiKey=c26a2ef76f54f5c0d4e8f66a0d11cb69aa2b';
+// Встроенные TURN серверы — несколько провайдеров для надёжности
+var BUILTIN_ICE = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    // Metered relay (прямые адреса — без API, с общими credentials)
+    { urls: 'turn:relay.metered.ca:80', username: 'e499486ca7a8aebca6f11e70', credential: 'uMQTzVtqaM5LKPNL' },
+    { urls: 'turn:relay.metered.ca:443', username: 'e499486ca7a8aebca6f11e70', credential: 'uMQTzVtqaM5LKPNL' },
+    { urls: 'turn:relay.metered.ca:443?transport=tcp', username: 'e499486ca7a8aebca6f11e70', credential: 'uMQTzVtqaM5LKPNL' },
+    { urls: 'turns:relay.metered.ca:443', username: 'e499486ca7a8aebca6f11e70', credential: 'uMQTzVtqaM5LKPNL' },
+    // freeturn.net — резервный
+    { urls: 'turn:freeturn.net:3478', username: 'free', credential: 'free' },
+    { urls: 'turns:freeturn.net:5349', username: 'free', credential: 'free' }
+];
 
 function getIceServers(cb) {
     var now = Date.now();
+
+    // Кеш ещё свежий
     if (iceCache && (now - iceCacheTime) < ICE_TTL) {
         return cb(iceCache);
     }
 
-    // Загружаем с Metered API
-    var apiUrl = METERED_URL;
-    fetchJson(apiUrl, function(err, data) {
-        if (!err && Array.isArray(data) && data.length > 0) {
-            console.log('[ICE] Metered TURN загружен, серверов:', data.length);
-            iceCache = data;
+    // Если задан кастомный URL (напр. свой Metered аккаунт) — загружаем
+    var customUrl = process.env.METERED_CREDS_URL;
+    if (customUrl) {
+        fetchJson(customUrl, function(err, data) {
+            if (!err && Array.isArray(data) && data.length > 0) {
+                console.log('[ICE] Кастомный TURN загружен, серверов:', data.length);
+                iceCache = data;
+                iceCacheTime = now;
+                return cb(iceCache);
+            }
+            console.warn('[ICE] Кастомный URL недоступен, используем встроенный список');
+            iceCache = BUILTIN_ICE;
             iceCacheTime = now;
-            return cb(iceCache);
-        }
-        // Fallback — STUN only (если Metered недоступен)
-        console.warn('[ICE] Metered недоступен, fallback STUN:', err && err.message);
-        cb([
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun.cloudflare.com:3478' }
-        ]);
-    });
+            cb(iceCache);
+        });
+        return;
+    }
+
+    // Встроенный список
+    console.log('[ICE] Используем встроенный список TURN серверов');
+    iceCache = BUILTIN_ICE;
+    iceCacheTime = now;
+    cb(iceCache);
 }
 
-// Простой HTTP/HTTPS GET → JSON (без зависимостей)
+// HTTP/HTTPS GET → JSON
 function fetchJson(url, cb) {
     var mod = url.startsWith('https') ? require('https') : require('http');
-    var req = mod.get(url, { timeout: 5000 }, function(res) {
+    var req = mod.get(url, { timeout: 6000 }, function(res) {
         var body = '';
         res.on('data', function(c) { body += c; });
         res.on('end', function() {
