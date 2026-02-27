@@ -343,7 +343,7 @@
         var col = gc(m.from);
         var av = '<div class="msg-avatar" style="background:' + col + '22;color:' + col + '">' + ini(m.from) + '</div>';
         var del = '<button class="msg-del" onclick="MGV.delMsg(\'' + m.id + '\')">✕</button>';
-        var react = '<button class="msg-react-btn" onclick="event.stopPropagation();showEmojiPicker(\'' + m.id + '\',this)" title="Реакция">😊</button>';
+        var react = '<button class="msg-react-btn" onclick="event.stopPropagation();window._mgvPicker(\'' + m.id + '\',this)" title="Реакция">😊</button>';
         var body = '';
         if (!own) body += '<div class="msg-meta"><span class="msg-author">' + esc(m.from) + '</span></div>';
 
@@ -374,7 +374,7 @@
                 var us = m.reactions[em];
                 if (!us || !us.length) return;
                 var mine = us.indexOf(S.name) !== -1;
-                rb += '<button class="reaction-chip' + (mine ? ' mine' : '') + '" title="' + esc(us.join(', ')) + '" onclick="event.stopPropagation();addReaction(\'' + m.id + '\',\'' + em + '\')"><span class="rc-em">' + em + '</span><span class="rc-n">' + us.length + '</span></button>';
+                rb += '<button class="reaction-chip' + (mine ? ' mine' : '') + '" title="' + esc(us.join(', ')) + '" onclick="event.stopPropagation();window._mgvReact(\'' + m.id + '\',\'' + em + '\')"><span class="rc-em">' + em + '</span><span class="rc-n">' + us.length + '</span></button>';
             });
         }
         rb += '</div>';
@@ -389,18 +389,27 @@
         c.appendChild(row);
         if (m.msgType === 'voice') setTimeout(function() { drawWave('vc_' + m.id, m.file && m.file.peaks); }, 80);
     }
-    // ─── Telegram-style voice pill ───
+    // ─── Telegram-style voice pill (с аватаром) ───
     function buildVoice(m, del) {
-        var uid = 'vc_' + m.id,
-            dur = +(m.file && m.file.duration) || 0;
-        return '<div class="msg-bubble" style="padding:0;background:transparent;border:none">' +
-            '<div class="voice-pill">' +
-            '<button class="vp-btn" id="' + uid + '_b" onclick="MGV.vpPlay(\'' + esc(m.file.url) + '\',\'' + uid + '\')">▶</button>' +
+        var uid = 'vc_' + m.id;
+        var dur = +(m.file && m.file.duration) || 0;
+        var col = gc(m.from);
+        var avLetter = ini(m.from);
+        // Аватар — кружок с буквой + анимация при воспроизведении
+        return '<div class="voice-pill" id="' + uid + '_pill">' +
+            '<div class="vp-avatar" id="' + uid + '_av"' +
+            ' style="background:' + col + '22;color:' + col + '"' +
+            ' onclick="MGV.vpPlay(\'' + esc(m.file.url) + '\',\'' + uid + '\')">' +
+            '<span class="vp-av-letter" id="' + uid + '_al">' + avLetter + '</span>' +
+            '<span class="vp-av-icon"   id="' + uid + '_ic">▶</span>' +
+            '</div>' +
+            '<div class="vp-content">' +
             '<div class="vp-track" onclick="MGV.vpSeek(event,\'' + uid + '\')">' +
             '<canvas class="vp-canvas" id="' + uid + '_c"></canvas>' +
             '</div>' +
             '<span class="vp-dur" id="' + uid + '_d">' + fmtD(dur) + '</span>' +
-            '</div>' + del + '</div>';
+            '</div>' +
+            del + '</div>';
     }
 
     function drawWave(uid, peaks) {
@@ -441,16 +450,26 @@
     }
 
     // ─── Voice playback ───
-    function vpPlay(url, uid) {
-        var btn = $(uid + '_b'),
-            dur = $(uid + '_d'),
-            cv = $(uid + '_c');
+    function vpSetState(uid, playing) {
+        var pill = $(uid + '_pill');
+        var ic = $(uid + '_ic');
+        var al = $(uid + '_al');
+        if (pill) pill.classList.toggle('playing', playing);
+        if (ic) ic.textContent = playing ? '⏸' : '▶';
+        if (al) al.style.opacity = playing ? '0' : '1';
+    }
 
-        // Stop current
+    function vpPlay(url, uid) {
+        var dur = $(uid + '_d');
+        var cv = $(uid + '_c');
+
+        // Stop previous
         if (VP.el && !VP.el.paused) {
             VP.el.pause();
-            var ob = $(VP.uid + '_b');
-            if (ob) ob.textContent = '▶';
+            vpSetState(VP.uid, false);
+            var prevDur = $(VP.uid + '_d');
+            if (prevDur && VP.el.duration) prevDur.textContent = fmtD(VP.el.duration);
+            renderWaveFrame($(VP.uid + '_c'), 0);
             if (VP.uid === uid) { VP.el = null;
                 VP.uid = null; return; }
         }
@@ -458,23 +477,25 @@
         var a = new Audio(url);
         VP.el = a;
         VP.uid = uid;
-        if (btn) btn.textContent = '⏸';
+        vpSetState(uid, true);
 
         a.addEventListener('timeupdate', function() {
             if (dur) dur.textContent = fmtD(a.currentTime);
             if (a.duration) renderWaveFrame(cv, a.currentTime / a.duration);
         });
         a.addEventListener('ended', function() {
-            if (btn) btn.textContent = '▶';
+            vpSetState(uid, false);
             if (dur && a.duration) dur.textContent = fmtD(a.duration);
             renderWaveFrame(cv, 0);
             VP.el = null;
             VP.uid = null;
         });
-        a.addEventListener('error', function() { if (btn) btn.textContent = '▶';
+        a.addEventListener('error', function() {
+            vpSetState(uid, false);
             VP.el = null;
-            VP.uid = null; });
-        a.play().catch(function() { if (btn) btn.textContent = '▶'; });
+            VP.uid = null;
+        });
+        a.play().catch(function() { vpSetState(uid, false); });
     }
 
     function vpSeek(e, uid) {
@@ -1329,5 +1350,9 @@
         toggleEmojiInput,
         attachFile: function() { $('file-input').click(); }
     };
+
+    // Expose reaction fns to global scope (called from inline onclick in innerHTML)
+    window._mgvReact = addReaction;
+    window._mgvPicker = showEmojiPicker;
 
 })();
