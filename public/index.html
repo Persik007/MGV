@@ -566,6 +566,10 @@
           <span>💬</span><span>Чаты</span>
           <span class="s-badge" id="badge-dm"></span>
         </button>
+                    <button class="s-tab" id="tab-fr" onclick="MGV.switchTab('fr')">
+          <span>👥</span><span>Друзья</span>
+          <span class="s-badge" id="badge-fr"></span>
+        </button>
                 </div>
 
                 <!-- Lists -->
@@ -574,6 +578,25 @@
                 </div>
                 <div id="panel-dm" class="s-list" style="display:none">
                     <div id="online-list"></div>
+                </div>
+
+                <div id="panel-fr" class="s-list" style="display:none">
+                    <!-- Friend search -->
+                    <div class="fr-search-wrap">
+                        <input class="fr-search-inp" id="fr-search" type="text" placeholder="Найти пользователя..." maxlength="30" oninput="MGV.frSearch(this.value)" autocomplete="off" autocorrect="off" spellcheck="false">
+                    </div>
+                    <div id="fr-search-results"></div>
+                    <!-- Incoming requests -->
+                    <div id="fr-incoming-section" style="display:none">
+                        <div class="fr-section-label">Входящие запросы</div>
+                        <div id="fr-incoming-list"></div>
+                    </div>
+                    <!-- Friends list -->
+                    <div class="fr-section-label" id="fr-friends-label">Друзья</div>
+                    <div id="fr-friends-list"></div>
+                    <div id="fr-empty" class="fr-empty" style="display:none">
+                        Найди друзей через поиск выше
+                    </div>
                 </div>
 
                 <div class="s-actions">
@@ -721,6 +744,16 @@
     </div>
 
     <!-- ═════ INCOMING ═════ -->
+    <!-- Friend request toast -->
+    <div id="friend-toast" style="display:none;position:fixed;top:22px;right:22px;background:var(--bg2);border:1px solid var(--accent);border-radius:14px;padding:14px 18px;z-index:700;min-width:240px;box-shadow:0 8px 32px rgba(0,0,0,.4);animation:slideUp .2s ease">
+        <div style="font-size:10px;color:var(--accent);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">👥 Запрос в друзья</div>
+        <div id="fr-toast-name" style="font-size:15px;font-weight:700;margin-bottom:10px">—</div>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-sm" style="flex:1" onclick="MGV.frAccept(document.getElementById('fr-toast-name').dataset.from)">✓ Принять</button>
+            <button class="btn btn-ghost btn-sm" style="flex:1" onclick="MGV.frDecline(document.getElementById('fr-toast-name').dataset.from)">✕ Отклонить</button>
+        </div>
+    </div>
+
     <div id="incoming">
         <div id="inc-label">📞 Входящий звонок</div>
         <div id="inc-name">—</div>

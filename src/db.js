@@ -155,6 +155,65 @@ function registerUpload(filename, originalName, uploader, size, mimetype) {
 
 function getAllUploads() { return load('uploads', []); }
 
+
+// ── Friends ──
+// { userName: { friends: [name,...], incoming: [name,...], outgoing: [name,...] } }
+let friendsData = load('friends', {});
+
+function getFriends(name) {
+    if (!friendsData[name]) friendsData[name] = { friends: [], incoming: [], outgoing: [] };
+    return friendsData[name];
+}
+
+function saveFriends() { save('friends', friendsData); }
+
+function sendFriendRequest(from, to) {
+    if (from === to) return 'self';
+    var f = getFriends(from);
+    var t = getFriends(to);
+    if (f.friends.includes(to)) return 'already';
+    if (f.outgoing.includes(to)) return 'pending';
+    // If `to` already sent request to `from` — auto-accept
+    if (t.outgoing.includes(from)) {
+        acceptFriend(to, from);
+        return 'accepted';
+    }
+    f.outgoing.push(to);
+    t.incoming.push(from);
+    saveFriends();
+    return 'sent';
+}
+
+function acceptFriend(me, requester) {
+    var m = getFriends(me);
+    var r = getFriends(requester);
+    m.incoming = m.incoming.filter(function(n) { return n !== requester; });
+    r.outgoing = r.outgoing.filter(function(n) { return n !== me; });
+    if (!m.friends.includes(requester)) m.friends.push(requester);
+    if (!r.friends.includes(me)) r.friends.push(me);
+    saveFriends();
+}
+
+function declineFriend(me, requester) {
+    var m = getFriends(me);
+    var r = getFriends(requester);
+    m.incoming = m.incoming.filter(function(n) { return n !== requester; });
+    r.outgoing = r.outgoing.filter(function(n) { return n !== me; });
+    saveFriends();
+}
+
+function removeFriend(me, other) {
+    var m = getFriends(me);
+    var o = getFriends(other);
+    m.friends = m.friends.filter(function(n) { return n !== other; });
+    o.friends = o.friends.filter(function(n) { return n !== me; });
+    saveFriends();
+}
+
+function isFriend(a, b) {
+    return getFriends(a).friends.includes(b);
+}
+
 module.exports = {
     hashPass,
     createUser,
@@ -175,5 +234,11 @@ module.exports = {
     toggleReaction,
     registerUpload,
     getAllUploads,
+    getFriends,
+    sendFriendRequest,
+    acceptFriend,
+    declineFriend,
+    removeFriend,
+    isFriend,
     UPLOADS_DIR
 };

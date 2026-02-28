@@ -16,7 +16,10 @@
         pendingFile: null,
         typingT: null,
         typingMap: {},
-        tab: 'ch'
+        tab: 'ch',
+        friends: [],
+        incoming: [],
+        outgoing: []
     };
 
     var RTC = {
@@ -150,6 +153,18 @@
             case 'reaction-update':
                 onReactionUpdate(m);
                 break;
+            case 'friends-data':
+                onFriendsData(m);
+                break;
+            case 'friend-result':
+                onFriendResult(m);
+                break;
+            case 'friend-incoming':
+                onFriendIncoming(m);
+                break;
+            case 'friend-accepted':
+                onFriendAccepted(m);
+                break;
         }
     }
 
@@ -177,8 +192,11 @@
         S.tab = t;
         $('tab-ch').classList.toggle('on', t === 'ch');
         $('tab-dm').classList.toggle('on', t === 'dm');
+        $('tab-fr').classList.toggle('on', t === 'fr');
         $('panel-ch').style.display = t === 'ch' ? '' : 'none';
         $('panel-dm').style.display = t === 'dm' ? '' : 'none';
+        var pfr = $('panel-fr');
+        if (pfr) pfr.style.display = t === 'fr' ? '' : 'none';
     }
 
     // ═══ LISTS ═══
@@ -203,19 +221,49 @@
         var box = $('online-list');
         if (!box) return;
         box.innerHTML = '';
-        var others = S.online.filter(function(n) { return n !== S.name; });
-        others.forEach(function(nm) {
+        // Show friends list always + online indicator
+        var shown = new Set();
+        // Friends first (always visible)
+        S.friends.forEach(function(nm) {
+            if (nm === S.name) return;
+            shown.add(nm);
+            var col = gc(nm),
+                dr = dmKey(nm),
+                u = S.unread[dr] || 0;
+            var isOnline = S.online.includes(nm);
+            var d = document.createElement('div');
+            d.className = 'u-row';
+            d.innerHTML = '<div class="u-av" style="background:' + col + '22;color:' + col + '">' +
+                '<span>' + ini(nm) + '</span>' +
+                (isOnline ? '<span class="u-av-online"></span>' : '') +
+                '</div>' +
+                '<div class="u-info"><span class="u-name">' + esc(nm) + '</span>' +
+                (isOnline ? '<span class="u-status-online">онлайн</span>' : '<span class="u-status-off">не в сети</span>') +
+                '</div>' +
+                (u ? '<span class="u-badge">' + u + '</span>' : '');
+            d.addEventListener('click', function() { openRoom(dr, 'dm', nm); });
+            box.appendChild(d);
+        });
+        // Online non-friends (grayed out, still accessible)
+        S.online.filter(function(n) { return n !== S.name && !shown.has(n); }).forEach(function(nm) {
             var col = gc(nm),
                 dr = dmKey(nm),
                 u = S.unread[dr] || 0;
             var d = document.createElement('div');
-            d.className = 'u-row';
+            d.className = 'u-row u-stranger';
             d.innerHTML = '<div class="u-av" style="background:' + col + '22;color:' + col + '">' + ini(nm) + '</div>' +
-                '<span class="u-name">' + esc(nm) + '</span>' +
-                (u ? '<span class="u-badge">' + u + '</span>' : '<span class="u-dot"></span>');
+                '<div class="u-info"><span class="u-name">' + esc(nm) + '</span>' +
+                '<span class="u-status-online">онлайн</span></div>' +
+                (u ? '<span class="u-badge">' + u + '</span>' : '');
             d.addEventListener('click', function() { openRoom(dr, 'dm', nm); });
             box.appendChild(d);
         });
+        if (box.children.length === 0) {
+            var empty = document.createElement('div');
+            empty.className = 'fr-empty';
+            empty.textContent = 'Нет друзей — добавь во вкладке Друзья';
+            box.appendChild(empty);
+        }
         updBadges();
     }
 
@@ -236,6 +284,10 @@
         var bd = $('badge-dm');
         if (bd) { bd.textContent = dm;
             bd.style.display = dm ? '' : 'none'; }
+        var bfr = $('badge-fr');
+        var frc = S.incoming ? S.incoming.length : 0;
+        if (bfr) { bfr.textContent = frc;
+            bfr.style.display = frc ? '' : 'none'; }
     }
 
     // ═══ OPEN ROOM ═══
@@ -1351,6 +1403,273 @@
         return arr;
     }
 
+    // ════════════════════════════════════════
+    // СИСТЕМА ДРУЗЕЙ
+    // ════════════════════════════════════════
+
+    function onFriendsData(m) {
+        S.friends = m.friends.friends || [];
+        S.incoming = m.friends.incoming || [];
+        S.outgoing = m.friends.outgoing || [];
+        renderFriends();
+        renderDm();
+        updBadges();
+    }
+
+    function onFriendResult(m) {
+        if (m.result === 'sent') {
+            showToast('Запрос отправлен → ' + m.to);
+            S.outgoing.push(m.to);
+            renderFriends();
+        } else if (m.result === 'already') {
+            showToast('Уже в друзьях');
+        } else if (m.result === 'pending') {
+            showToast('Запрос уже отправлен');
+        } else if (m.result === 'accepted') {
+            showToast('Вы теперь друзья с ' + m.to + ' 🎉');
+        } else if (m.result === 'self') {
+            showToast('Нельзя добавить себя');
+        }
+    }
+
+    function onFriendIncoming(m) {
+        S.incoming = m.pending || [];
+        renderFriends();
+        updBadges();
+        // Show toast
+        var toast = $('friend-toast');
+        var tname = $('fr-toast-name');
+        if (toast && tname) {
+            tname.textContent = m.from;
+            tname.dataset.from = m.from;
+            toast.style.display = 'block';
+            clearTimeout(toast._t);
+            toast._t = setTimeout(function() { toast.style.display = 'none'; }, 12000);
+        }
+    }
+
+    function onFriendAccepted(m) {
+        showToast(m.by + ' принял твой запрос 🎉');
+    }
+
+    function frAccept(fromName) {
+        wsSend({ type: 'friend-accept', from: fromName });
+        S.incoming = S.incoming.filter(function(n) { return n !== fromName; });
+        var toast = $('friend-toast');
+        if (toast) toast.style.display = 'none';
+        renderFriends();
+    }
+
+    function frDecline(fromName) {
+        wsSend({ type: 'friend-decline', from: fromName });
+        S.incoming = S.incoming.filter(function(n) { return n !== fromName; });
+        var toast = $('friend-toast');
+        if (toast) toast.style.display = 'none';
+        renderFriends();
+    }
+
+    function frRemove(name) {
+        if (!confirm('Удалить ' + name + ' из друзей?')) return;
+        wsSend({ type: 'friend-remove', other: name });
+    }
+
+    function frSendRequest(name) {
+        wsSend({ type: 'friend-request', to: name });
+    }
+
+    // Search users (client-side filter from known list)
+    var frSearchTimer = null;
+
+    function frSearch(query) {
+        clearTimeout(frSearchTimer);
+        frSearchTimer = setTimeout(function() { doFrSearch(query.trim()); }, 200);
+    }
+
+    function doFrSearch(q) {
+        var box = $('fr-search-results');
+        if (!box) return;
+        box.innerHTML = '';
+        if (!q || q.length < 2) { return; }
+        // Filter from online list + known friends
+        var known = new Set(S.friends.concat(S.incoming).concat(S.outgoing).concat(S.online));
+        known.delete(S.name);
+        var matches = Array.from(known).filter(function(n) {
+            return n.toLowerCase().includes(q.toLowerCase());
+        }).slice(0, 8);
+
+        if (matches.length === 0) {
+            // Show "send request to username" option
+            (function() {
+                var btn = document.createElement('button');
+                btn.className = 'fr-action-btn';
+                btn.textContent = '+ Добавить';
+                btn.onclick = function() { frSendRequest(q); };
+                var itm = document.createElement('div');
+                itm.className = 'fr-search-item';
+                itm.innerHTML = '<div class="fr-search-av" style="background:#1e2d45;color:#60a5fa">' + q[0].toUpperCase() + '</div>' +
+                    '<div class="fr-search-info"><div class="fr-search-name">' + esc(q) + '</div>' +
+                    '<div class="fr-search-sub">Отправить запрос</div></div>';
+                itm.appendChild(btn);
+                box.appendChild(itm);
+            })();
+            return;
+        }
+
+        matches.forEach(function(nm) {
+            var col = gc(nm);
+            var isFriend = S.friends.includes(nm);
+            var isPending = S.outgoing.includes(nm);
+            var isIncoming = S.incoming.includes(nm);
+            var isOnline = S.online.includes(nm);
+
+            var item = document.createElement('div');
+            item.className = 'fr-search-item';
+
+            var avEl = document.createElement('div');
+            avEl.className = 'fr-search-av';
+            avEl.style.cssText = 'background:' + col + '22;color:' + col;
+            avEl.textContent = ini(nm);
+            item.appendChild(avEl);
+
+            var info = document.createElement('div');
+            info.className = 'fr-search-info';
+            var nEl = document.createElement('div');
+            nEl.className = 'fr-search-name';
+            nEl.textContent = nm;
+            var sEl = document.createElement('div');
+            sEl.className = 'fr-search-sub';
+            sEl.textContent = isOnline ? '● онлайн' : 'не в сети';
+            if (isOnline) sEl.style.color = 'var(--green)';
+            info.appendChild(nEl);
+            info.appendChild(sEl);
+            item.appendChild(info);
+
+            if (isFriend) {
+                var tag = document.createElement('span');
+                tag.className = 'fr-tag-friend';
+                tag.textContent = 'Друг ✓';
+                item.appendChild(tag);
+            } else if (isPending) {
+                var tag = document.createElement('span');
+                tag.className = 'fr-tag-pend';
+                tag.textContent = 'Ожидает...';
+                item.appendChild(tag);
+            } else if (isIncoming) {
+                var btn = document.createElement('button');
+                btn.className = 'fr-action-btn fr-accept';
+                btn.textContent = '✓ Принять';
+                btn.onclick = function() { frAccept(nm); };
+                item.appendChild(btn);
+            } else {
+                var btn = document.createElement('button');
+                btn.className = 'fr-action-btn';
+                btn.textContent = '+ Добавить';
+                btn.onclick = function() { frSendRequest(nm); };
+                item.appendChild(btn);
+            }
+            box.appendChild(item);
+        });
+    }
+
+    function renderFriends() {
+        // Incoming requests section
+        var inSec = $('fr-incoming-section');
+        var inList = $('fr-incoming-list');
+        if (inSec && inList) {
+            inSec.style.display = S.incoming.length ? '' : 'none';
+            inList.innerHTML = '';
+            S.incoming.forEach(function(nm) {
+                var col = gc(nm);
+                var d = document.createElement('div');
+                d.className = 'fr-req-item';
+                var av = document.createElement('div');
+                av.className = 'fr-req-av';
+                av.style.cssText = 'background:' + col + '22;color:' + col;
+                av.textContent = ini(nm);
+                var nEl = document.createElement('div');
+                nEl.className = 'fr-req-name';
+                nEl.textContent = nm;
+                var b1 = document.createElement('button');
+                b1.className = 'fr-action-btn fr-accept';
+                b1.textContent = '✓';
+                b1.onclick = (function(n) { return function() { frAccept(n); }; })(nm);
+                var b2 = document.createElement('button');
+                b2.className = 'fr-action-btn fr-deny';
+                b2.textContent = '✕';
+                b2.onclick = (function(n) { return function() { frDecline(n); }; })(nm);
+                d.appendChild(av);
+                d.appendChild(nEl);
+                d.appendChild(b1);
+                d.appendChild(b2);
+                inList.appendChild(d);
+            });
+        }
+
+        // Friends list
+        var fl = $('fr-friends-list');
+        var fe = $('fr-empty');
+        if (!fl) return;
+        fl.innerHTML = '';
+        S.friends.forEach(function(nm) {
+            var col = gc(nm);
+            var isOnline = S.online.includes(nm);
+            var dr = dmKey(nm);
+            var d = document.createElement('div');
+            d.className = 'fr-friend-item';
+            d.innerHTML = '<div class="u-av" style="background:' + col + '22;color:' + col + '">' +
+                '<span>' + ini(nm) + '</span>' +
+                (isOnline ? '<span class="u-av-online"></span>' : '') +
+                '</div>' +
+                '</div>';
+            var infoDiv = document.createElement('div');
+            infoDiv.className = 'u-info';
+            infoDiv.style.cssText = 'flex:1;cursor:pointer';
+            infoDiv.innerHTML = '<span class="u-name">' + esc(nm) + '</span>' +
+                (isOnline ? '<span class="u-status-online">онлайн</span>' : '<span class="u-status-off">не в сети</span>');
+            infoDiv.onclick = (function(room, n) { return function() { openRoom(room, 'dm', n); }; })(dmKey(nm), nm);
+            var rmBtn = document.createElement('button');
+            rmBtn.className = 'fr-rm-btn';
+            rmBtn.title = 'Удалить';
+            rmBtn.textContent = '✕';
+            rmBtn.onclick = (function(n) { return function() { frRemove(n); }; })(nm);
+            d.appendChild(infoDiv);
+            d.appendChild(rmBtn);
+            fl.appendChild(d);
+        });
+
+        if (fe) fe.style.display = (S.friends.length === 0 && S.outgoing.length === 0) ? '' : 'none';
+
+        // Outgoing (pending)
+        if (S.outgoing.length) {
+            var pLabel = document.createElement('div');
+            pLabel.className = 'fr-section-label';
+            pLabel.textContent = 'Ожидают ответа';
+            fl.appendChild(pLabel);
+            S.outgoing.forEach(function(nm) {
+                var col = gc(nm);
+                var d = document.createElement('div');
+                d.className = 'fr-friend-item';
+                d.style.opacity = '0.6';
+                d.innerHTML = '<div class="u-av" style="background:' + col + '22;color:' + col + '">' + ini(nm) + '</div>' +
+                    '<div class="u-info" style="flex:1"><span class="u-name">' + esc(nm) + '</span>' +
+                    '<span class="u-status-off">запрос отправлен</span></div>';
+                fl.appendChild(d);
+            });
+        }
+        updBadges();
+    }
+
+    function showToast(msg) {
+        var t = document.getElementById('mgv-toast');
+        if (!t) { t = document.createElement('div');
+            t.id = 'mgv-toast';
+            document.body.appendChild(t); }
+        t.textContent = msg;
+        t.className = 'mgv-toast show';
+        clearTimeout(t._timer);
+        t._timer = setTimeout(function() { t.className = 'mgv-toast'; }, 3000);
+    }
+
     // ═══ INIT ═══
     function init() {
         $('l-name').addEventListener('keydown', function(e) { if (e.key === 'Enter') $('l-pass').focus(); });
@@ -1417,6 +1736,11 @@
         goBack,
         addReaction,
         toggleEmojiInput,
+        frAccept,
+        frDecline,
+        frRemove,
+        frSendRequest,
+        frSearch,
         attachFile: function() { $('file-input').click(); }
     };
 

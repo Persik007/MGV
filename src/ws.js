@@ -56,6 +56,9 @@ function setup(wss) {
                 ws.send(JSON.stringify({ type: 'auth-ok', name: name, role: user.role }));
                 // send channels list
                 ws.send(JSON.stringify({ type: 'channels', channels: Object.values(db.getAllChannels()) }));
+                // Send friends data
+                var myFriends = db.getFriends(name);
+                ws.send(JSON.stringify({ type: 'friends-data', friends: myFriends }));
                 broadcastOnlineList();
                 return;
             }
@@ -137,6 +140,59 @@ function setup(wss) {
                 var reactions = db.toggleReaction(room, msgId, emoji, myName);
                 if (reactions !== null) {
                     broadcastAll({ type: 'reaction-update', room: room, msgId: msgId, reactions: reactions });
+                }
+
+                // ── FRIEND REQUEST ──
+            } else if (msg.type === 'friend-request') {
+                var toName = String(msg.to || '');
+                if (!toName || !db.getUser(toName)) return;
+                var result = db.sendFriendRequest(myName, toName);
+                ws.send(JSON.stringify({ type: 'friend-result', result: result, to: toName }));
+                if (result === 'sent') {
+                    // Notify recipient if online
+                    var toWs = sessions.get(toName);
+                    if (toWs && toWs.readyState === 1) {
+                        var theirFriends = db.getFriends(toName);
+                        toWs.send(JSON.stringify({ type: 'friend-incoming', from: myName, pending: theirFriends.incoming }));
+                    }
+                } else if (result === 'accepted') {
+                    // Both accepted — update both
+                    var myF = db.getFriends(myName);
+                    ws.send(JSON.stringify({ type: 'friends-data', friends: myF }));
+                    var toWs2 = sessions.get(toName);
+                    if (toWs2 && toWs2.readyState === 1) {
+                        toWs2.send(JSON.stringify({ type: 'friends-data', friends: db.getFriends(toName) }));
+                    }
+                }
+
+                // ── FRIEND ACCEPT ──
+            } else if (msg.type === 'friend-accept') {
+                var fromName = String(msg.from || '');
+                if (!fromName) return;
+                db.acceptFriend(myName, fromName);
+                ws.send(JSON.stringify({ type: 'friends-data', friends: db.getFriends(myName) }));
+                var fromWs = sessions.get(fromName);
+                if (fromWs && fromWs.readyState === 1) {
+                    fromWs.send(JSON.stringify({ type: 'friends-data', friends: db.getFriends(fromName) }));
+                    fromWs.send(JSON.stringify({ type: 'friend-accepted', by: myName }));
+                }
+
+                // ── FRIEND DECLINE ──
+            } else if (msg.type === 'friend-decline') {
+                var fromName = String(msg.from || '');
+                if (!fromName) return;
+                db.declineFriend(myName, fromName);
+                ws.send(JSON.stringify({ type: 'friends-data', friends: db.getFriends(myName) }));
+
+                // ── FRIEND REMOVE ──
+            } else if (msg.type === 'friend-remove') {
+                var otherName = String(msg.other || '');
+                if (!otherName) return;
+                db.removeFriend(myName, otherName);
+                ws.send(JSON.stringify({ type: 'friends-data', friends: db.getFriends(myName) }));
+                var otherWs = sessions.get(otherName);
+                if (otherWs && otherWs.readyState === 1) {
+                    otherWs.send(JSON.stringify({ type: 'friends-data', friends: db.getFriends(otherName) }));
                 }
 
                 // ── TYPING ──
