@@ -168,6 +168,8 @@
             var ba = $('btn-add-ch');
             if (ba) ba.style.display = '';
         }
+        // Register SW + request push permission
+        initPwa(S.name);
     }
 
     // ═══ TABS ═══
@@ -1292,6 +1294,63 @@
         }
     }
 
+    // ════════════════════════════════════════
+    // PWA — Service Worker + Push Notifications
+    // ════════════════════════════════════════
+
+    async function initPwa(userName) {
+        if (!('serviceWorker' in navigator)) return;
+        try {
+            var reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+            console.log('[PWA] SW registered');
+            navigator.serviceWorker.addEventListener('message', function(e) {
+                if (e.data && e.data.type === 'bg-sync') {
+                    if (!S.ws || S.ws.readyState > 1) initWs();
+                }
+            });
+            await setupPush(reg, userName);
+        } catch (e) { console.warn('[PWA] SW:', e); }
+    }
+
+    async function setupPush(reg, userName) {
+        if (!('PushManager' in window)) return;
+        var perm = Notification.permission;
+        if (perm === 'denied') return;
+        var vapidKey;
+        try {
+            var r = await fetch('/api/push/vapid-key');
+            vapidKey = (await r.json()).publicKey;
+        } catch (e) { return; }
+        var sub;
+        try {
+            sub = await reg.pushManager.getSubscription();
+            if (!sub) {
+                if (perm !== 'granted') perm = await Notification.requestPermission();
+                if (perm !== 'granted') return;
+                sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8(vapidKey)
+                });
+            }
+        } catch (e) { console.warn('[PWA] subscribe:', e); return; }
+        try {
+            await fetch('/api/push/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: userName, subscription: sub.toJSON() })
+            });
+            console.log('[PWA] Push ready');
+        } catch (e) {}
+    }
+
+    function urlBase64ToUint8(b64) {
+        var pad = '='.repeat((4 - b64.length % 4) % 4);
+        var raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+        var arr = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+        return arr;
+    }
+
     // ═══ INIT ═══
     function init() {
         $('l-name').addEventListener('keydown', function(e) { if (e.key === 'Enter') $('l-pass').focus(); });
@@ -1309,6 +1368,16 @@
             cv.addEventListener('drop', function(e) { e.preventDefault(); var f = e.dataTransfer.files[0]; if (f) upload(f); }); }
         if (Notification && Notification.permission !== 'granted') Notification.requestPermission();
         if ($('admin-link')) $('admin-link').style.display = 'none';
+        // iOS install banner
+        (function() {
+            var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+            if (isIos && !window.navigator.standalone && !localStorage.getItem('mgv-banner')) {
+                setTimeout(function() {
+                    var b = document.getElementById('ios-install-banner');
+                    if (b) b.style.display = 'flex';
+                }, 4000);
+            }
+        })();
         var n = localStorage.getItem('mgv_n'),
             p = localStorage.getItem('mgv_p');
         if (n && p) { S.name = n;

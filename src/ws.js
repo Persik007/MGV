@@ -1,5 +1,6 @@
 // src/ws.js — WebSocket message handler
 const db = require('./db');
+const push = require('./push');
 
 // sessions: name -> ws
 const sessions = new Map();
@@ -81,6 +82,20 @@ function setup(wss) {
                 var msgType = String(msg.msgType || (file ? 'file' : 'text'));
                 var saved = db.addMessage(room, myName, { text: text, file: file, type: msgType, msgType: msgType });
                 broadcastAll({ type: 'channel-msg', room: room, message: saved });
+                // Push to offline users
+                var onlineNames = Array.from(sessions.keys());
+                var allUsers = Object.keys(db.getAllUsers ? db.getAllUsers() : {});
+                var chName = ch ? (ch.name || room) : room;
+                allUsers.forEach(function(name) {
+                    if (name !== myName && onlineNames.indexOf(name) === -1) {
+                        push.notifyUser(name, {
+                            title: myName + ' → #' + chName,
+                            body: saved.text ? saved.text.slice(0, 100) : (saved.msgType === 'voice' ? '🎤 Голосовое' : '📎 Файл'),
+                            tag: 'ch-' + room,
+                            url: '/'
+                        });
+                    }
+                });
 
                 // ── DM ──
             } else if (msg.type === 'dm') {
@@ -92,6 +107,15 @@ function setup(wss) {
                 var msgType2 = String(msg.msgType || (file ? 'file' : 'text'));
                 var saved = db.addMessage(room, myName, { text: text, file: file, type: msgType2, msgType: msgType2 });
                 broadcast([myName, toName], { type: 'channel-msg', room: room, message: saved });
+                // Push to offline recipient
+                if (!sessions.has(toName)) {
+                    push.notifyUser(toName, {
+                        title: '💬 ' + myName,
+                        body: saved.text ? saved.text.slice(0, 100) : (saved.msgType === 'voice' ? '🎤 Голосовое' : '📎 Файл'),
+                        tag: 'dm-' + room,
+                        url: '/'
+                    });
+                }
 
                 // ── DELETE MESSAGE (admin or own) ──
             } else if (msg.type === 'delete-msg') {

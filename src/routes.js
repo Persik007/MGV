@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const db = require('./db');
+const push = require('./push');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
@@ -17,6 +18,8 @@ const MIME = {
     '.gif': 'image/gif',
     '.webp': 'image/webp',
     '.svg': 'image/svg+xml',
+    '.webmanifest': 'application/manifest+json',
+    '.webp': 'image/webp',
     '.mp4': 'video/mp4',
     '.pdf': 'application/pdf',
     '.zip': 'application/zip',
@@ -192,6 +195,38 @@ function handle(req, res, sessions) {
             });
             res.end(JSON.stringify(ice));
         });
+        return;
+    }
+
+    // ── Push subscription save ──
+    if (url === '/api/push/subscribe' && req.method === 'POST') {
+        var body = '';
+        req.on('data', function(d) { body += d; });
+        req.on('end', function() {
+            try {
+                var data = JSON.parse(body);
+                var userName = String(data.user || '');
+                var sub = data.subscription;
+                if (!userName || !sub || !sub.endpoint) {
+                    res.writeHead(400);
+                    res.end('{}');
+                    return;
+                }
+                push.addSub(userName, sub);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: true }));
+            } catch (e) {
+                res.writeHead(400);
+                res.end('{}');
+            }
+        });
+        return;
+    }
+
+    // ── VAPID public key ──
+    if (url === '/api/push/vapid-key' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'public,max-age=86400' });
+        res.end(JSON.stringify({ publicKey: push.VAPID_PUBLIC }));
         return;
     }
 
